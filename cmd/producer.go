@@ -17,16 +17,14 @@ func main() {
 	flag.Parse()
 	done := make(chan int, *pworkers)
 	work := func() {
-		c := client.NewClient(*pserver, *ptopic, 2)
+		c := client.NewProducer(10, *pserver, *ptopic)
 		for i := 0; i < *pn; i++ {
-			_, err := c.ProduceIO(&Message{
+			c.ProduceIO(&Message{
 				Data:      []byte(*pmessage),
 				TimeoutMs: 10000,
 			})
 			//	log.Printf("%s", res.String())
-			if err != nil {
-				log.Fatal(err)
-			}
+
 		}
 		done <- *pn
 	}

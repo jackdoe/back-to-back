@@ -13,10 +13,10 @@ func main() {
 	var ptopic = flag.String("topic", "abc", "topic")
 	flag.Parse()
 
-	c := client.NewClient(*pserver, *ptopic, 10)
+	c := client.NewConsumer(*pserver, *ptopic)
 	i := 0
 	c.CloseOnExit()
-	c.Consume(func(m *Message) *Message {
+	c.Consume(10, func(m *Message) *Message {
 		//	log.Printf("received %s", m)
 		if i%10000 == 0 {
 			log.Printf("received %d", i)

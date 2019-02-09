@@ -117,6 +117,13 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 		} else {
 			to <- message
 		}
+	} else if message.Type == MessageType_PING {
+		log.Infof("POLL: %s", message.String())
+		pong := &Message{
+			Type:  MessageType_PONG,
+			Topic: message.Topic,
+		}
+		return Send(c, pong)
 	} else {
 		log.Infof("POLL: %s", message.String())
 	}
