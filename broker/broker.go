@@ -96,6 +96,16 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 		topic.channel <- message
 
 		var reply *Message
+
+		/*
+			the issue here is that we might get a
+			timeout, and then for some reason
+			close the connection, and so the
+			localReplyChannel will be closed, the
+			other side can try to write to closed
+			channel so in some time if a reply
+			comes,
+		*/
 		select {
 		case reply = <-localReplyChannel:
 		case <-time.After(time.Duration(message.TimeoutMs) * time.Millisecond):
@@ -121,10 +131,13 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 		if !ok {
 			log.Warnf("ignoring reply for missing message id %d, topic: %s", message.RequestID, message.Topic)
 		} else {
-			// FIXME if we write to closed channel we will panic
+			// XXX if we write to closed channel we will panic
 			// so we just rlock the whole btb and on async close we close the channel with write lock
 			// this has to be rewritten using proper channel patterns
 			// but since the whole project is proof of concept, not sure it is worth it
+
+			// having this rlock allows us to make sure nobody is closing any channels while we are trying to write to them
+			// we also drain the channel on disconnect, so we could always write to it, it will just go in the void
 			btb.RLock()
 			to <- message
 			btb.RUnlock()
@@ -177,7 +190,7 @@ func (btb *BackToBack) clientWorker(c net.Conn) {
 
 	log.Warnf("disconnecting %s", c.RemoteAddr())
 
-	// FIXME delete the client from everywhere
+	// should be rare
 	btb.RLock()
 	for _, topic := range btb.topics {
 		topic.Lock()
@@ -190,7 +203,19 @@ func (btb *BackToBack) clientWorker(c net.Conn) {
 		topic.Unlock()
 	}
 	btb.RUnlock()
+
 	btb.Lock()
+
+	// drain
+L:
+	for {
+		select {
+		case <-localReplyChanel:
+		default:
+			break L
+		}
+	}
+
 	close(localReplyChanel)
 	btb.Unlock()
 }
