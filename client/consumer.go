@@ -16,6 +16,7 @@ func (c *Client) consumeConnection(idx int, cb func(*Message) *Message) error {
 	conn := c.connectAndPoll(idx)
 
 	for {
+		conn.SetReadDeadline(time.Now().Add(c.readTimeout))
 		m, err := Receive(conn)
 		if err != nil {
 			log.Warnf("error on conn addr: %s, %s", c.addr, err)
@@ -30,6 +31,7 @@ func (c *Client) consumeConnection(idx int, cb func(*Message) *Message) error {
 		reply.Type = MessageType_REPLY
 		reply.RequestID = m.RequestID
 
+		conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
 		err = Send(conn, reply)
 		if err != nil {
 			log.Warnf("error replying %s", err)
@@ -39,12 +41,16 @@ func (c *Client) consumeConnection(idx int, cb func(*Message) *Message) error {
 
 func (c *Client) connectAndPoll(idx int) net.Conn {
 	for {
-		conn, err := net.Dial("tcp", c.addr)
+
+		conn, err := c.dial()
 		if err != nil {
 			log.Warn(err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
+
+		conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+
 		err = Send(conn, &Message{Topic: c.topic, Type: MessageType_POLL})
 		if err != nil {
 			log.Warn(err)

@@ -19,7 +19,7 @@ func NewProducer(n int, addr string, topic string) *Client {
 
 func (c *Client) reconnect(idx int) net.Conn {
 	for {
-		conn, err := net.Dial("tcp", c.addr)
+		conn, err := c.dial()
 		if err != nil {
 			log.Warn(err)
 			time.Sleep(1 * time.Second)
@@ -59,7 +59,9 @@ func (c *Client) ProduceIO(request *Message) *Message {
 	idx := c.random.Intn(len(c.connections))
 	for {
 		conn := c.connections[idx]
+		conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
 		err := Send(conn, request)
+
 		if err != nil {
 			log.Warnf("error sending, trying again: %s", err.Error())
 
@@ -69,6 +71,7 @@ func (c *Client) ProduceIO(request *Message) *Message {
 
 			continue
 		}
+		conn.SetReadDeadline(time.Now().Add(c.readTimeout))
 		m, err := Receive(conn)
 		if err != nil {
 			log.Warnf("error receiving, trying again: %s", err.Error())
