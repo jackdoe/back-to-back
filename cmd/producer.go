@@ -13,19 +13,20 @@ func main() {
 	var pmessage = flag.String("message", "hello producer", "send this message")
 	var pn = flag.Int("n", 1000, "number of messages")
 	var pworkers = flag.Int("workers", 10, "number of workers")
+	var pconnections = flag.Int("connections", 2, "number of connections")
 	var ptopic = flag.String("topic", "abc", "topic")
 	flag.Parse()
 	done := make(chan int, *pworkers)
 	work := func() {
-		c := client.NewProducer(10, *pserver, *ptopic)
+		c := client.NewProducer(*pconnections, *pserver, *ptopic)
 		for i := 0; i < *pn; i++ {
 			c.ProduceIO(&Message{
 				Data:      []byte(*pmessage),
 				TimeoutMs: 10000,
 			})
-			//	log.Printf("%s", res.String())
-
+			//log.Printf("%s", res.String())
 		}
+		c.Close()
 		done <- *pn
 	}
 	t0 := time.Now().UnixNano()
