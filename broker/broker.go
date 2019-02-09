@@ -16,7 +16,7 @@ import (
 type Topic struct {
 	channel  chan *Message
 	requests map[uint64]chan *Message
-	sync.Mutex
+	sync.RWMutex
 }
 
 type BackToBack struct {
@@ -59,6 +59,7 @@ func (btb *BackToBack) Listen() {
 
 	go func() {
 		<-sigs
+		log.Info("closing..")
 		btb.listener.Close()
 	}()
 
@@ -111,14 +112,19 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 	} else if message.Type == MessageType_REPLY {
 		//log.Infof("reply: %s", message.String())
 		topic.Lock()
-
 		to, ok := topic.requests[message.RequestID]
 		topic.Unlock()
 
 		if !ok {
 			log.Warnf("ignoring reply for missing message id %d, topic: %s", message.RequestID, message.Topic)
 		} else {
+			// FIXME if we write to closed channel we will panic
+			// so we just rlock the whole btb and on async close we close the channel with write lock
+			// this has to be rewritten using proper channel patterns
+			// but since the whole project is proof of concept, not sure it is worth it
+			btb.RLock()
 			to <- message
+			btb.RUnlock()
 		}
 	} else if message.Type == MessageType_PING {
 		pong := &Message{
@@ -162,7 +168,6 @@ func (btb *BackToBack) clientWorker(c net.Conn) {
 	}
 
 	log.Warnf("disconnecting %s", c.RemoteAddr())
-	close(localReplyChanel)
 
 	// FIXME delete the client from everywhere
 	btb.RLock()
@@ -175,8 +180,9 @@ func (btb *BackToBack) clientWorker(c net.Conn) {
 			}
 		}
 		topic.Unlock()
-
 	}
 	btb.RUnlock()
-
+	btb.Lock()
+	close(localReplyChanel)
+	btb.Unlock()
 }
