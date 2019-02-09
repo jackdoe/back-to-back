@@ -29,7 +29,7 @@ type BackToBack struct {
 func NewBackToBack(listener net.Listener) *BackToBack {
 	return &BackToBack{
 		topics:   map[string]*Topic{},
-		uuid:     0, //uint64(time.Now().UnixNano()),
+		uuid:     uint64(time.Now().UnixNano()),
 		listener: listener,
 	}
 }
@@ -78,19 +78,24 @@ func (btb *BackToBack) Listen() {
 
 func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Conn, message *Message) error {
 	topic := btb.getTopic(message.Topic)
+
+	/*
+		Exaple request:
+
+		producer A -> sends message { topic: "abc". data "xyz" }
+
+	*/
 	if message.Type == MessageType_REQUEST {
 		message.RequestID = atomic.AddUint64(&btb.uuid, 1)
-		//log.Printf("uuid: %d", message.RequestID)
-		//log.Infof("requiest: %s", message.String())
 
 		topic.Lock()
 		topic.requests[message.RequestID] = localReplyChannel
 		topic.Unlock()
 
+		// anyone listening on the topic can pick it up
 		topic.channel <- message
 
 		var reply *Message
-
 		select {
 		case reply = <-localReplyChannel:
 		case <-time.After(time.Duration(message.TimeoutMs) * time.Millisecond):
@@ -101,8 +106,6 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 			}
 			log.Infof("timeout reply: %s", reply.String())
 		}
-
-		//log.Infof("reply: %s", reply.String())
 
 		topic.Lock()
 		delete(topic.requests, message.RequestID)
@@ -132,10 +135,15 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 			Topic: message.Topic,
 		}
 		return Send(c, pong)
-	} else {
+	} else if message.Type == MessageType_POLL {
+		// after the poll we can wait for another
 		log.Infof("POLL: %s", message.String())
+	} else {
+		log.Infof("UNKNOWN: %s", message.String())
 	}
-
+	// by default assume it is a consumer
+	// producers only use REQUEST message
+	// maybe its better to split producers and consumers in the broker code
 	request := <-topic.channel
 
 	err := Send(c, request)
