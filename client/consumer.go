@@ -12,16 +12,15 @@ func NewConsumer(addr string, topic string) *Client {
 	return NewClient(addr, topic)
 }
 
-func (c *Client) consumeConnection(idx int, cb func(*Message) *Message) error {
-	conn := c.connectAndPoll(idx)
+func (c *Client) consumeConnection(cb func(*Message) *Message) {
+	conn := c.connectAndPoll()
 
 	for {
-		conn.SetReadDeadline(time.Now().Add(c.readTimeout))
 		m, err := Receive(conn)
 		if err != nil {
 			log.Warnf("error on conn addr: %s, %s", c.addr, err)
 			conn.Close()
-			conn = c.connectAndPoll(idx)
+			conn = c.connectAndPoll()
 
 			continue
 		}
@@ -39,35 +38,28 @@ func (c *Client) consumeConnection(idx int, cb func(*Message) *Message) error {
 	}
 }
 
-func (c *Client) connectAndPoll(idx int) net.Conn {
+func (c *Client) connectAndPoll() net.Conn {
+	c.Lock()
+	defer c.Unlock()
 	for {
-
-		conn, err := c.dial()
-		if err != nil {
-			log.Warn(err)
-			time.Sleep(1 * time.Second)
-			continue
-		}
+		conn := c.connect()
 
 		conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
-
-		err = Send(conn, &Message{Topic: c.topic, Type: MessageType_POLL})
+		err := Send(conn, &Message{Topic: c.topic, Type: MessageType_POLL})
 		if err != nil {
 			log.Warn(err)
 			conn.Close()
 			continue
 		}
 
-		c.connections[idx] = conn
-
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return conn
 	}
 }
 
 func (c *Client) Consume(n int, cb func(*Message) *Message) {
-	c.connections = make([]net.Conn, n)
 	for i := 1; i < n; i++ {
-		go c.consumeConnection(i, cb)
+		go c.consumeConnection(cb)
 	}
-	c.consumeConnection(0, cb)
+	c.consumeConnection(cb)
 }

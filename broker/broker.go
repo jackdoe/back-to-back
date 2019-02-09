@@ -29,7 +29,7 @@ type BackToBack struct {
 func NewBackToBack(listener net.Listener) *BackToBack {
 	return &BackToBack{
 		topics:   map[string]*Topic{},
-		uuid:     uint64(time.Now().UnixNano()),
+		uuid:     0, //uint64(time.Now().UnixNano()),
 		listener: listener,
 	}
 }
@@ -41,7 +41,7 @@ func (btb *BackToBack) getTopic(topic string) *Topic {
 	if !ok {
 		btb.Lock()
 		t = &Topic{
-			channel:  make(chan *Message),
+			channel:  make(chan *Message, 1),
 			requests: map[uint64]chan *Message{},
 		}
 		btb.topics[topic] = t
@@ -80,6 +80,7 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 	if message.Type == MessageType_REQUEST {
 		message.RequestID = atomic.AddUint64(&btb.uuid, 1)
 		//log.Infof("requiest: %s", message.String())
+
 		topic.Lock()
 		topic.requests[message.RequestID] = localReplyChannel
 		topic.Unlock()
@@ -96,6 +97,7 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 				RequestID: message.RequestID,
 				Topic:     message.Topic,
 			}
+			log.Infof("timeout reply: %s", reply.String())
 		}
 
 		//log.Infof("reply: %s", reply.String())
@@ -118,7 +120,6 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 			to <- message
 		}
 	} else if message.Type == MessageType_PING {
-		log.Infof("POLL: %s", message.String())
 		pong := &Message{
 			Type:  MessageType_PONG,
 			Topic: message.Topic,

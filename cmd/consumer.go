@@ -5,6 +5,8 @@ import (
 	client "github.com/jackdoe/back-to-back/client"
 	. "github.com/jackdoe/back-to-back/spec"
 	"log"
+	"sync/atomic"
+	"time"
 )
 
 func main() {
@@ -15,17 +17,22 @@ func main() {
 	flag.Parse()
 
 	c := client.NewConsumer(*pserver, *ptopic)
-	i := 0
-	c.CloseOnExit()
+	i := uint64(0)
+	go func() {
+		for {
+			log.Printf("received so far: %d", i)
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
 	c.Consume(*pworkers, func(m *Message) *Message {
 		//	log.Printf("received %s", m)
-		if i%10000 == 0 {
-			log.Printf("received %d", i)
-		}
-		i++
+
+		i = atomic.AddUint64(&i, 1)
+
 		return &Message{
 			Data: []byte(*preply),
 		}
-
 	})
+
 }
