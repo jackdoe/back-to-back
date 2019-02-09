@@ -62,9 +62,11 @@ func (c *Client) ProduceIO(request *Message) *Message {
 		err := Send(conn, request)
 		if err != nil {
 			log.Warnf("error sending, trying again: %s", err.Error())
+
 			c.Lock()
 			conn = c.reconnect(idx)
 			c.Unlock()
+
 			continue
 		}
 		m, err := Receive(conn)
