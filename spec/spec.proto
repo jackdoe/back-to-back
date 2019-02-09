@@ -11,6 +11,8 @@ enum MessageType {
         BROADCAST = 4;
         ERROR = 5;
         TIMEOUT = 6;
+        PING = 7;
+        PONG = 8;
 }
 
 message Message {

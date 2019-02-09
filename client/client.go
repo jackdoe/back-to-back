@@ -6,6 +6,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"math/rand"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -40,6 +43,23 @@ func NewClient(addr string, topic string, nconnections int) *Client {
 	return c
 }
 
+func (c *Client) CloseOnExit() {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-sigs
+		c.Close()
+		os.Exit(0)
+	}()
+}
+
+func (c *Client) Close() {
+	for _, conn := range c.connections {
+		conn.Close()
+	}
+}
+
 func (c *Client) ProduceIO(request *Message) (*Message, error) {
 	request.Topic = c.topic
 	request.Type = MessageType_REQUEST
@@ -52,31 +72,35 @@ func (c *Client) ProduceIO(request *Message) (*Message, error) {
 	return Receive(conn)
 }
 
-func (c *Client) consumeConnection(idx int, cb func(*Message) *Message) error {
-	reconnect := func(conn net.Conn, err error) {
-		log.Warnf("error on conn idx: %d, addr: %s, %s", idx, c.addr, err)
-		conn.Close()
-		// sleep 1 second between retries
-		time.Sleep(1 * time.Second)
-		conn, err = net.Dial("tcp", c.addr)
+func (c *Client) connect() net.Conn {
+	for {
+		conn, err := net.Dial("tcp", c.addr)
 		if err != nil {
-			log.Fatal(err)
+			log.Warn(err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		log.Infof("sending POLL")
+		err = Send(conn, &Message{Topic: c.topic, Type: MessageType_POLL})
+		if err != nil {
+			conn.Close()
+			continue
 		}
 
-		c.connections[idx] = conn
+		return conn
 	}
 
-	log.Infof("sending POLL to connection %d", idx)
-	err := Send(c.connections[idx], &Message{Topic: c.topic, Type: MessageType_POLL})
-	if err != nil {
-		log.Fatal(err)
-	}
+}
+func (c *Client) consumeConnection(idx int, cb func(*Message) *Message) error {
+	conn := c.connections[idx]
 
 	for {
-		conn := c.connections[idx]
+
 		m, err := Receive(conn)
 		if err != nil {
-			reconnect(conn, err)
+			log.Warnf("error on conn idx: %d, addr: %s, %s", idx, c.addr, err)
+			conn.Close()
+			conn = c.connect()
 			continue
 		}
 

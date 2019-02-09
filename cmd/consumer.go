@@ -15,6 +15,7 @@ func main() {
 
 	c := client.NewClient(*pserver, *ptopic, 2)
 	i := 0
+	c.CloseOnExit()
 	c.Consume(func(m *Message) *Message {
 		//	log.Printf("received %s", m)
 		if i%1000 == 0 {

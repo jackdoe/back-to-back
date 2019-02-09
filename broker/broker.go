@@ -139,14 +139,14 @@ func (btb *BackToBack) clientWorker(c net.Conn) {
 	for {
 		message, err := Receive(c)
 		if err != nil {
-			log.Warnf("err: %s", err.Error())
+			log.Warnf("err receive: %s", err.Error())
 			c.Close()
 			break
 		}
 
 		err = btb.processMessage(localReplyChanel, c, message)
 		if err != nil {
-			log.Warnf("err: %s", err.Error())
+			log.Warnf("err process: %s", err.Error())
 			c.Close()
 			break
 		}
@@ -154,6 +154,7 @@ func (btb *BackToBack) clientWorker(c net.Conn) {
 
 	log.Warnf("disconnecting %s", c.RemoteAddr())
 	close(localReplyChanel)
+
 	// FIXME delete the client from everywhere
 	btb.RLock()
 	for _, topic := range btb.topics {

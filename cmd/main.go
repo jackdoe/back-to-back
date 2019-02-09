@@ -5,6 +5,8 @@ import (
 	. "github.com/jackdoe/back-to-back/broker"
 	"log"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 )
 
@@ -16,6 +18,9 @@ func main() {
 	if err != nil {
 		log.Fatal("Listen error: ", err)
 	}
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 	btb := NewBackToBack(sock)
 	btb.Listen()
 	os.Exit(0)
