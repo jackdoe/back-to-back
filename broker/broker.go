@@ -13,9 +13,14 @@ import (
 	"time"
 )
 
-type BackToBack struct {
-	topics   map[string]chan *Message
+type Topic struct {
+	channel  chan *Message
 	requests map[uint64]chan *Message
+	sync.Mutex
+}
+
+type BackToBack struct {
+	topics   map[string]*Topic
 	uuid     uint64
 	listener net.Listener
 	sync.RWMutex
@@ -23,22 +28,29 @@ type BackToBack struct {
 
 func NewBackToBack(listener net.Listener) *BackToBack {
 	return &BackToBack{
-		topics:   map[string]chan *Message{},
-		requests: map[uint64]chan *Message{},
+		topics:   map[string]*Topic{},
 		uuid:     uint64(time.Now().UnixNano()),
 		listener: listener,
 	}
 }
 
-func (btb *BackToBack) getTopic(topic string) chan *Message {
+func (btb *BackToBack) getTopic(topic string) *Topic {
+	btb.RLock()
 	t, ok := btb.topics[topic]
+	btb.RUnlock()
 	if !ok {
-		t = make(chan *Message)
+		btb.Lock()
+		t = &Topic{
+			channel:  make(chan *Message),
+			requests: map[uint64]chan *Message{},
+		}
 		btb.topics[topic] = t
+		btb.Unlock()
 	}
 
 	return t
 }
+
 func (btb *BackToBack) Listen() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -64,16 +76,15 @@ func (btb *BackToBack) Listen() {
 }
 
 func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Conn, message *Message) error {
+	topic := btb.getTopic(message.Topic)
 	if message.Type == MessageType_REQUEST {
 		message.RequestID = atomic.AddUint64(&btb.uuid, 1)
 		//log.Infof("requiest: %s", message.String())
+		topic.Lock()
+		topic.requests[message.RequestID] = localReplyChannel
+		topic.Unlock()
 
-		btb.Lock()
-		t := btb.getTopic(message.Topic)
-		btb.requests[message.RequestID] = localReplyChannel
-		btb.Unlock()
-
-		t <- message
+		topic.channel <- message
 
 		var reply *Message
 
@@ -89,16 +100,17 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 
 		//log.Infof("reply: %s", reply.String())
 
-		btb.Lock()
-		delete(btb.requests, message.RequestID)
-		btb.Unlock()
+		topic.Lock()
+		delete(topic.requests, message.RequestID)
+		topic.Unlock()
 
 		return Send(c, reply)
 	} else if message.Type == MessageType_REPLY {
 		//log.Infof("reply: %s", message.String())
-		btb.Lock()
-		to, ok := btb.requests[message.RequestID]
-		btb.Unlock()
+		topic.Lock()
+
+		to, ok := topic.requests[message.RequestID]
+		topic.Unlock()
 
 		if !ok {
 			log.Warnf("ignoring reply for missing message id %d, topic: %s", message.RequestID, message.Topic)
@@ -109,11 +121,8 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 		log.Infof("POLL: %s", message.String())
 	}
 
-	btb.Lock()
-	t := btb.getTopic(message.Topic)
-	btb.Unlock()
+	request := <-topic.channel
 
-	request := <-t
 	err := Send(c, request)
 	if err != nil {
 		return err
@@ -142,17 +151,22 @@ func (btb *BackToBack) clientWorker(c net.Conn) {
 			break
 		}
 	}
+
 	log.Warnf("disconnecting %s", c.RemoteAddr())
 	close(localReplyChanel)
 	// FIXME delete the client from everywhere
-	btb.Lock()
-	for id, ch := range btb.requests {
-		if ch == localReplyChanel {
-			log.Warnf("dropping %d on the floor", id)
-			delete(btb.requests, id)
+	btb.RLock()
+	for _, topic := range btb.topics {
+		topic.Lock()
+		for id, ch := range topic.requests {
+			if ch == localReplyChanel {
+				log.Warnf("dropping %d on the floor", id)
+				delete(topic.requests, id)
+			}
 		}
+		topic.Unlock()
 
 	}
-	btb.Unlock()
+	btb.RUnlock()
 
 }

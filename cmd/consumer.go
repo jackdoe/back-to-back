@@ -4,7 +4,7 @@ import (
 	"flag"
 	client "github.com/jackdoe/back-to-back/client"
 	. "github.com/jackdoe/back-to-back/spec"
-	//	"log"
+	"log"
 )
 
 func main() {
@@ -14,11 +14,16 @@ func main() {
 	flag.Parse()
 
 	c := client.NewClient(*pserver, *ptopic, 2)
-
+	i := 0
 	c.Consume(func(m *Message) *Message {
 		//	log.Printf("received %s", m)
+		if i%1000 == 0 {
+			log.Printf("received %d", i)
+		}
+		i++
 		return &Message{
 			Data: []byte(*preply),
 		}
+
 	})
 }
