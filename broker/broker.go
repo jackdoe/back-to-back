@@ -79,12 +79,24 @@ func (btb *BackToBack) Listen() {
 func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Conn, message *Message) error {
 	topic := btb.getTopic(message.Topic)
 
-	/*
-		Exaple request:
+	//Exaple request/reply:
+	//	producer A -> sends message { topic: "abc". data "xyz" }
+	//
+	//                          broker X receives the message of type REQUEST
+	//                                   adds message ID
+	//                                   creates map from RequestID to replyTo channel
+	//                                   pushes to the topic channel
+	//                                   waits for reply on the replyTo channel
+	//
+	//      consumer A -> sends message {topic: "abc", POLL }
+	//                    waits for requests
+	//                    when request comes in
+	//                    writes reply copying the RequestID to the reply
+	//
+	//                          broker X receives a message of type REPLY
+	//                                   looks up if has a channel for message.requestID
+	//                                   writes the replyTo the channel
 
-		producer A -> sends message { topic: "abc". data "xyz" }
-
-	*/
 	if message.Type == MessageType_REQUEST {
 		message.RequestID = atomic.AddUint64(&btb.uuid, 1)
 
