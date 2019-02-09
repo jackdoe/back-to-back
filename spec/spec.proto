@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package spec;
+
+
+enum MessageType {
+        UNKNOWN = 0; 
+        REPLY = 1;
+        REQUEST = 2;
+        POLL = 3;
+        BROADCAST = 4;
+        ERROR = 5;
+        TIMEOUT = 6;
+}
+
+message Message {
+        string topic = 1;
+        uint64 requestID = 2;
+        bytes data = 3;
+        MessageType type = 4;
+        uint32 ttl = 5;
+        uint32 timeoutMs = 6;
+}
