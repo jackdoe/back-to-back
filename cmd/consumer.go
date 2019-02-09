@@ -26,9 +26,9 @@ func main() {
 	}()
 
 	c.Consume(*pworkers, func(m *Message) *Message {
-		//	log.Printf("received %s", m)
+		//log.Printf("received %d", m.RequestID)
 
-		i = atomic.AddUint64(&i, 1)
+		atomic.AddUint64(&i, 1)
 
 		return &Message{
 			Data: []byte(*preply),

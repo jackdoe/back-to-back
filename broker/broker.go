@@ -79,6 +79,7 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 	topic := btb.getTopic(message.Topic)
 	if message.Type == MessageType_REQUEST {
 		message.RequestID = atomic.AddUint64(&btb.uuid, 1)
+		//log.Printf("uuid: %d", message.RequestID)
 		//log.Infof("requiest: %s", message.String())
 
 		topic.Lock()
