@@ -13,6 +13,8 @@ enum MessageType {
         TIMEOUT = 6;
         PING = 7;
         PONG = 8;
+        I_AM_PRODUCER = 9;
+        I_AM_CONSUMER = 10;
 }
 
 message Message {

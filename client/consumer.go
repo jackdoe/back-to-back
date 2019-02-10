@@ -26,17 +26,17 @@ func (c *Client) consumeConnection(cb func(*Message) *Message) {
 		}
 
 		reply := cb(m)
-		// FIXME: in case of broadcast we should not reply
-		if m.Type == MessageType_REQUEST {
-			reply.Topic = c.topic
-			reply.Type = MessageType_REPLY
-			reply.RequestID = m.RequestID
 
-			conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
-			err = Send(conn, reply)
-			if err != nil {
-				log.Warnf("error replying %s", err)
-			}
+		reply.Topic = c.topic
+		reply.Type = MessageType_REPLY
+		reply.RequestID = m.RequestID
+		reply.TimeoutMs = m.TimeoutMs
+
+		conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+		err = Send(conn, reply)
+
+		if err != nil {
+			log.Warnf("error replying %s", err)
 		}
 	}
 }
