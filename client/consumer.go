@@ -17,7 +17,8 @@ func (c *Client) consumeConnection(cb func(*Message) *Message) {
 		for {
 			c.Lock()
 			conn := c.connect(MessageType_I_AM_CONSUMER)
-			conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+			//conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+			conn.SetWriteDeadline(time.Time{})
 			conn.SetReadDeadline(time.Time{})
 			c.Unlock()
 			return conn

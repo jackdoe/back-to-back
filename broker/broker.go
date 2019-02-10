@@ -92,20 +92,16 @@ func (btb *BackToBack) clientWorkerProducer(topic *Topic, c net.Conn) {
 		r := MessageAndOrigin{message, c}
 
 		topic.requests <- r
+		topic.ping <- true
 	}
 }
 
 func (btb *BackToBack) clientWorkerConsumer(topic *Topic, c net.Conn) {
 
-	wait := make(chan bool)
 LOOP:
 	for {
 		// either wait for ping, or poll
 
-		go func() {
-			Receive(c)
-			wait <- true
-		}()
 		select {
 		case <-topic.ping:
 			err := Send(c, &Message{Topic: topic.name, Type: MessageType_POLL})
@@ -113,7 +109,8 @@ LOOP:
 				log.Warnf("failed to request poll: %s", err.Error())
 				break LOOP
 			}
-		case <-wait:
+			Receive(c)
+
 			select {
 			case request := <-topic.requests:
 				deadline := time.Now().Add(time.Duration(request.message.TimeoutMs) * time.Millisecond)
@@ -144,7 +141,6 @@ LOOP:
 					break LOOP
 				}
 			}
-
 		}
 		// get the poll
 
