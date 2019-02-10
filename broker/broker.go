@@ -100,8 +100,6 @@ func (btb *BackToBack) clientWorkerConsumer(topic *Topic, c net.Conn) {
 
 LOOP:
 	for {
-		// either wait for ping, or poll
-
 		select {
 		case <-topic.ping:
 			err := Send(c, &Message{Topic: topic.name, Type: MessageType_POLL})
@@ -142,8 +140,6 @@ LOOP:
 				}
 			}
 		}
-		// get the poll
-
 	}
 	c.Close()
 }
