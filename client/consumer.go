@@ -38,6 +38,14 @@ func (c *Client) consumeConnection(cb func(*Message) *Message) {
 				log.Warnf("error replying %s", err)
 			}
 		}
+		conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+		err = Send(conn, &Message{Topic: c.topic, Type: MessageType_POLL})
+		if err != nil {
+			log.Warn(err)
+			conn.Close()
+			continue
+		}
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	}
 }
 

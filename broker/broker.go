@@ -162,20 +162,21 @@ func (btb *BackToBack) processMessage(localReplyChannel chan *Message, c net.Con
 		return Send(c, pong)
 	} else if message.Type == MessageType_POLL {
 		// after the poll we can wait for another
-		log.Infof("POLL: %s", message.String())
+		//log.Infof("POLL: %s", message.String())
+		// by default assume it is a consumer
+		// producers only use REQUEST message
+		// maybe its better to split producers and consumers in the broker code
+		request := <-topic.channel
+
+		err := Send(c, request)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	} else {
 		log.Infof("UNKNOWN: %s", message.String())
 	}
-	// by default assume it is a consumer
-	// producers only use REQUEST message
-	// maybe its better to split producers and consumers in the broker code
-	request := <-topic.channel
-
-	err := Send(c, request)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
