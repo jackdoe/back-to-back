@@ -4,10 +4,12 @@ import (
 	"encoding/binary"
 	. "github.com/jackdoe/back-to-back/spec"
 	"io"
+	"log"
 	"net"
 )
 
 func Send(c net.Conn, message *Message) error {
+	log.Printf("sending %s", message)
 	size := message.Size()
 	data := make([]byte, 4+size)
 	_, err := message.MarshalTo(data[4:])
@@ -39,5 +41,6 @@ func Receive(c net.Conn) (*Message, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("received %s", message)
 	return message, nil
 }

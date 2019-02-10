@@ -12,14 +12,21 @@ import (
 	"time"
 )
 
+type MessageAndOrigin struct {
+	message *Message
+	origin  net.Conn
+}
+
 type Topic struct {
-	waiting chan net.Conn
+	waiting  chan net.Conn
+	requests chan MessageAndOrigin
+	ping     chan bool
+	name     string
 	sync.RWMutex
 }
 
 type BackToBack struct {
 	topics   map[string]*Topic
-	uuid     uint64
 	listener net.Listener
 	sync.RWMutex
 }
@@ -27,7 +34,6 @@ type BackToBack struct {
 func NewBackToBack(listener net.Listener) *BackToBack {
 	return &BackToBack{
 		topics:   map[string]*Topic{},
-		uuid:     uint64(time.Now().UnixNano()),
 		listener: listener,
 	}
 }
@@ -39,7 +45,9 @@ func (btb *BackToBack) getTopic(topic string) *Topic {
 	if !ok {
 		btb.Lock()
 		t = &Topic{
-			waiting: make(chan net.Conn, 1000),
+			ping:     make(chan bool, 10), // XXX: poc
+			requests: make(chan MessageAndOrigin, 10000),
+			name:     topic,
 		}
 		btb.topics[topic] = t
 		btb.Unlock()
@@ -76,47 +84,72 @@ func (btb *BackToBack) Listen() {
 func (btb *BackToBack) clientWorkerProducer(topic *Topic, c net.Conn) {
 	for {
 		message, err := Receive(c)
-		//log.Infof("request %s", message)
 		if err != nil {
 			log.Warnf("err receive: %s", err.Error())
 			c.Close()
 			return
 		}
+		r := MessageAndOrigin{message, c}
 
-		var reply *Message
-	REMOTE:
-		for {
-			remote := <-topic.waiting
-			remote.SetDeadline(time.Now().Add(time.Duration(message.TimeoutMs) * time.Millisecond))
-			err = Send(remote, message)
-			if err != nil {
-				log.Printf("error sending: %s", err.Error())
-				remote.Close()
-				continue REMOTE
-			}
-			reply, err = Receive(remote)
-			if err != nil {
-				log.Printf("error waiting for reply: %s", err.Error())
-				remote.Close()
-				continue REMOTE
-			}
-			//log.Infof("reply %s", reply)
-			topic.waiting <- remote
-			break
-		}
-
-		c.SetDeadline(time.Now().Add(time.Duration(message.TimeoutMs) * time.Millisecond))
-		err = Send(c, reply)
-		if err != nil {
-			log.Warnf("err process: %s", err.Error())
-			c.Close()
-			break
-		}
+		topic.requests <- r
 	}
 }
 
 func (btb *BackToBack) clientWorkerConsumer(topic *Topic, c net.Conn) {
-	topic.waiting <- c
+
+	wait := make(chan bool)
+LOOP:
+	for {
+		// either wait for ping, or poll
+
+		go func() {
+			Receive(c)
+			wait <- true
+		}()
+		select {
+		case <-topic.ping:
+			err := Send(c, &Message{Topic: topic.name, Type: MessageType_POLL})
+			if err != nil {
+				log.Warnf("failed to request poll: %s", err.Error())
+				break LOOP
+			}
+		case <-wait:
+			select {
+			case request := <-topic.requests:
+				deadline := time.Now().Add(time.Duration(request.message.TimeoutMs) * time.Millisecond)
+				//				c.SetDeadline(deadline)
+				err := Send(c, request.message)
+				if err != nil {
+					log.Printf("error sending: %s deadline: %s timeout ms: %d", err.Error(), deadline, request.message.TimeoutMs)
+					break LOOP
+				}
+				reply, err := Receive(c)
+				if err != nil {
+					log.Printf("error waiting for reply: %s", err.Error())
+					break LOOP
+				}
+
+				remote := request.origin
+				//				remote.SetWriteDeadline(deadline)
+				err = Send(remote, reply)
+				if err != nil {
+					remote.Close()
+					log.Warnf("failed to reply: %s", err.Error())
+				}
+			default:
+				request := &Message{Topic: topic.name, Type: MessageType_EMPTY}
+				err := Send(c, request)
+				if err != nil {
+					log.Warnf("failed to reply empty: %s", err.Error())
+					break LOOP
+				}
+			}
+
+		}
+		// get the poll
+
+	}
+	c.Close()
 }
 
 func (btb *BackToBack) clientWorker(c net.Conn) {

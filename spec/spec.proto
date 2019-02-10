@@ -9,12 +9,14 @@ enum MessageType {
         REQUEST = 2;
         POLL = 3;
         BROADCAST = 4;
+
         ERROR = 5;
         TIMEOUT = 6;
         PING = 7;
         PONG = 8;
         I_AM_PRODUCER = 9;
         I_AM_CONSUMER = 10;
+        EMPTY = 12;
 }
 
 message Message {
