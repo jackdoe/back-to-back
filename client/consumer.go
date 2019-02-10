@@ -14,6 +14,8 @@ func NewConsumer(addr string, topic string) *Client {
 func (c *Client) consumeConnection(cb func(*Message) *Message) {
 	c.Lock()
 	conn := c.connect(MessageType_I_AM_CONSUMER)
+	conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	c.Unlock()
 	for {
 		m, err := Receive(conn)
@@ -23,6 +25,8 @@ func (c *Client) consumeConnection(cb func(*Message) *Message) {
 
 			c.Lock()
 			conn = c.connect(MessageType_I_AM_CONSUMER)
+			conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 			c.Unlock()
 
 			continue
@@ -35,8 +39,6 @@ func (c *Client) consumeConnection(cb func(*Message) *Message) {
 		reply.RequestID = m.RequestID
 		reply.TimeoutMs = m.TimeoutMs
 
-		conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		err = Send(conn, reply)
 
 		if err != nil {
