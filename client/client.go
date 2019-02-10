@@ -39,7 +39,7 @@ func NewClient(addr string, topic string) *Client {
 	return c
 }
 
-func (c *Client) connect() net.Conn {
+func (c *Client) connect(mtype MessageType) net.Conn {
 	for {
 		conn, err := c.dial()
 		if err != nil {
@@ -50,7 +50,7 @@ func (c *Client) connect() net.Conn {
 		conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
 		conn.SetReadDeadline(time.Now().Add(c.readTimeout))
 
-		err = Send(conn, &Message{Topic: c.topic, Type: MessageType_PING})
+		err = Send(conn, &Message{Topic: c.topic, Type: mtype})
 		if err != nil {
 			log.Warn(err)
 			conn.Close()

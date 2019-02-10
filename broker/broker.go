@@ -39,7 +39,7 @@ func (btb *BackToBack) getTopic(topic string) *Topic {
 	if !ok {
 		btb.Lock()
 		t = &Topic{
-			waiting: make(chan net.Conn),
+			waiting: make(chan net.Conn, 1000),
 		}
 		btb.topics[topic] = t
 		btb.Unlock()
@@ -73,6 +73,52 @@ func (btb *BackToBack) Listen() {
 	btb.listener.Close()
 }
 
+func (btb *BackToBack) clientWorkerProducer(topic *Topic, c net.Conn) {
+	for {
+		message, err := Receive(c)
+		//log.Infof("request %s", message)
+		if err != nil {
+			log.Warnf("err receive: %s", err.Error())
+			c.Close()
+			return
+		}
+
+		var reply *Message
+	REMOTE:
+		for {
+			remote := <-topic.waiting
+			remote.SetDeadline(time.Now().Add(time.Duration(message.TimeoutMs) * time.Millisecond))
+			err = Send(remote, message)
+			if err != nil {
+				log.Printf("error sending: %s", err.Error())
+				remote.Close()
+				continue REMOTE
+			}
+			reply, err = Receive(remote)
+			if err != nil {
+				log.Printf("error waiting for reply: %s", err.Error())
+				remote.Close()
+				continue REMOTE
+			}
+			//log.Infof("reply %s", reply)
+			topic.waiting <- remote
+			break
+		}
+
+		c.SetDeadline(time.Now().Add(time.Duration(message.TimeoutMs) * time.Millisecond))
+		err = Send(c, reply)
+		if err != nil {
+			log.Warnf("err process: %s", err.Error())
+			c.Close()
+			break
+		}
+	}
+}
+
+func (btb *BackToBack) clientWorkerConsumer(topic *Topic, c net.Conn) {
+	topic.waiting <- c
+}
+
 func (btb *BackToBack) clientWorker(c net.Conn) {
 	//log.Infof("worker for %s started", c.RemoteAddr())
 	// make sure we can at least do PINGPONG
@@ -84,7 +130,7 @@ func (btb *BackToBack) clientWorker(c net.Conn) {
 		return
 	}
 
-	if message.Type == MessageType_PING {
+	if message.Type == MessageType_I_AM_PRODUCER || message.Type == MessageType_I_AM_CONSUMER {
 		pong := &Message{
 			Type:  MessageType_PONG,
 			Topic: message.Topic,
@@ -95,53 +141,14 @@ func (btb *BackToBack) clientWorker(c net.Conn) {
 			c.Close()
 			return
 		}
+		if message.Type == MessageType_I_AM_PRODUCER {
+			btb.clientWorkerProducer(topic, c)
+		} else {
+			btb.clientWorkerConsumer(topic, c)
+		}
 	} else {
 		log.Warnf("did not receive PING, %s", message)
 		c.Close()
 		return
 	}
-
-	log.Printf("ping/pong done, waiting for work")
-	for {
-		message, err := Receive(c)
-		if err != nil {
-			log.Warnf("err receive: %s", err.Error())
-			c.Close()
-			return
-		}
-		if message.Type == MessageType_POLL {
-			topic.waiting <- c
-			// let the req/reply state machine take care of it
-			return
-		} else {
-			// XXX: timeout
-			remote := <-topic.waiting
-			remote.SetDeadline(time.Now().Add(time.Duration(message.TimeoutMs) * time.Millisecond))
-
-			err := Send(remote, message)
-			if err != nil {
-				log.Printf("error sending: %s", err.Error())
-				remote.Close()
-				continue
-			}
-			reply, err := Receive(remote)
-			if err != nil {
-				log.Printf("error waiting for reply: %s", err.Error())
-				remote.Close()
-				continue
-			}
-
-			topic.waiting <- remote
-
-			c.SetDeadline(time.Now().Add(time.Duration(message.TimeoutMs) * time.Millisecond))
-			err = Send(c, reply)
-			if err != nil {
-				log.Warnf("err process: %s", err.Error())
-				c.Close()
-				break
-			}
-		}
-	}
-
-	log.Warnf("disconnecting %s", c.RemoteAddr())
 }

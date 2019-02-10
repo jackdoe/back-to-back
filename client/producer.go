@@ -9,7 +9,7 @@ import (
 
 func NewProducer(n int, addr string, topic string) *Client {
 	c := NewClient(addr, topic)
-	c.connection = c.connect()
+	c.connection = c.connect(MessageType_I_AM_PRODUCER)
 	return c
 }
 
@@ -21,12 +21,11 @@ func (c *Client) ProduceIO(request *Message) *Message {
 		conn := c.connection
 		conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
 		err := Send(conn, request)
-
 		if err != nil {
 			log.Warnf("error sending, trying again: %s", err.Error())
 
 			c.Lock()
-			c.connection = c.connect()
+			c.connection = c.connect(MessageType_I_AM_PRODUCER)
 			c.Unlock()
 
 			continue
