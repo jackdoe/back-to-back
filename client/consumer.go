@@ -4,68 +4,62 @@ import (
 	. "github.com/jackdoe/back-to-back/spec"
 	. "github.com/jackdoe/back-to-back/util"
 	log "github.com/sirupsen/logrus"
-	"net"
+	//"net"
 	"time"
 )
 
-func NewConsumer(addr string, topic string) *Client {
-	return NewClient(addr, topic)
-}
-
-func (c *Client) consumeConnection(cb func(*Message) *Message) {
-	reconnect := func() net.Conn {
-		for {
-			c.Lock()
-			conn := c.connect(MessageType_I_AM_CONSUMER)
-			//conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
-			conn.SetWriteDeadline(time.Time{})
-			conn.SetReadDeadline(time.Time{})
-			c.Unlock()
-			return conn
-		}
-
-	}
-	conn := reconnect()
-
+func ConsumeConnection(addr string, topics []string, cb func(*Message) *Message) {
+	poll, _ := Pack(&Poll{Topic: topics})
+CONNECT:
 	for {
-		m, err := Receive(conn)
-		if err != nil {
-			log.Warnf("error on conn addr: %s, %s", c.addr, err)
-			conn.Close()
+		conn := Connect(addr)
+	REQUEST:
+		for {
+			<-time.After(100 * time.Millisecond)
+			// consume while messages are available
+			n := 0
+			for {
+				_, err := conn.Write(poll)
+				if err != nil {
+					log.Warnf("error on poll addr: %s, %s", addr, err)
+					conn.Close()
+					continue CONNECT
+				}
 
-			conn = reconnect()
-			continue
-		}
-		if m.Type == MessageType_POLL {
-			err := Send(conn, &Message{Topic: c.topic, Type: MessageType_POLL})
-			if err != nil {
-				log.Warnf("failed to request poll: %s", err.Error())
-				break
+				m, err := ReceiveRequest(conn)
+				if err != nil {
+					log.Warnf("error on conn addr: %s, %s", addr, err)
+					conn.Close()
+					continue CONNECT
+				}
+
+				if m.Type == MessageType_EMPTY {
+					continue REQUEST
+				}
+
+				reply := cb(m)
+
+				reply.Topic = m.Topic
+				reply.Type = MessageType_REPLY
+
+				err = Send(conn, Marshallable(reply))
+				if err != nil {
+					log.Warnf("error replying %s", err)
+					conn.Close()
+					continue CONNECT
+				}
+				n++
 			}
-		} else if m.Type == MessageType_EMPTY {
 
-		} else if m.Type == MessageType_REQUEST {
-			request := m
-			reply := cb(request)
-
-			reply.Topic = c.topic
-			reply.Type = MessageType_REPLY
-
-			err = Send(conn, reply)
-
-			if err != nil {
-				log.Warnf("error replying %s", err)
-				conn.Close()
-				conn = reconnect()
-				continue
-			}
 		}
 	}
 }
 
-func (c *Client) Consume(n int, cb func(*Message) *Message) {
-	for i := 1; i < n; i++ {
-		go c.consumeConnection(cb)
+func Consume(addr []string, topics []string, n int, cb func(*Message) *Message) {
+	for _, a := range addr {
+		for i := 1; i < n; i++ {
+			go ConsumeConnection(a, topics, cb)
+		}
+		ConsumeConnection(a, topics, cb)
 	}
-	c.consumeConnection(cb)
 }

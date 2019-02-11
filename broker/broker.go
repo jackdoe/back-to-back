@@ -1,14 +1,13 @@
 package broker
 
 import (
+	"fmt"
 	. "github.com/jackdoe/back-to-back/spec"
 	. "github.com/jackdoe/back-to-back/util"
 	log "github.com/sirupsen/logrus"
 	"net"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,21 +19,20 @@ type MessageAndOrigin struct {
 type Topic struct {
 	waiting  chan net.Conn
 	requests chan MessageAndOrigin
-	ping     chan bool
 	name     string
 	sync.RWMutex
 }
 
 type BackToBack struct {
-	topics   map[string]*Topic
-	listener net.Listener
+	topics        map[string]*Topic
+	producedCount uint64
+	consumedCount uint64
 	sync.RWMutex
 }
 
-func NewBackToBack(listener net.Listener) *BackToBack {
+func NewBackToBack() *BackToBack {
 	return &BackToBack{
-		topics:   map[string]*Topic{},
-		listener: listener,
+		topics: map[string]*Topic{},
 	}
 }
 
@@ -45,7 +43,6 @@ func (btb *BackToBack) getTopic(topic string) *Topic {
 	if !ok {
 		btb.Lock()
 		t = &Topic{
-			ping:     make(chan bool, 10), // XXX: poc
 			requests: make(chan MessageAndOrigin, 10000),
 			name:     topic,
 		}
@@ -56,69 +53,76 @@ func (btb *BackToBack) getTopic(topic string) *Topic {
 	return t
 }
 
-func (btb *BackToBack) Listen() {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-	log.Infof("listening at %s", btb.listener.Addr())
-
-	go func() {
-		<-sigs
-		log.Info("closing..")
-		btb.listener.Close()
-	}()
+func (btb *BackToBack) Listen(listener net.Listener, worker func(net.Conn)) {
+	log.Infof("listening at %s", listener.Addr())
 
 	for {
-		fd, err := btb.listener.Accept()
+		fd, err := listener.Accept()
 		if err != nil {
 			log.Warnf("accept error: %s", err.Error())
 			break
 		}
 
-		go btb.clientWorker(fd)
+		go worker(fd)
 	}
 
-	btb.listener.Close()
+	listener.Close()
 }
-
-func (btb *BackToBack) clientWorkerProducer(topic *Topic, c net.Conn) {
+func (btb *BackToBack) String() string {
+	return fmt.Sprintf("producedCount: %d consumedCount: %d", btb.producedCount, btb.consumedCount)
+}
+func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 	for {
-		message, err := Receive(c)
+		message, err := ReceiveRequest(c)
+
 		if err != nil {
 			log.Warnf("err receive: %s", err.Error())
 			c.Close()
 			return
 		}
+
 		r := MessageAndOrigin{message, c}
+		topic := btb.getTopic(message.Topic)
 
 		topic.requests <- r
-		topic.ping <- true
+		atomic.AddUint64(&btb.producedCount, 1)
 	}
 }
 
-func (btb *BackToBack) clientWorkerConsumer(topic *Topic, c net.Conn) {
-
+func (btb *BackToBack) ClientWorkerConsumer(c net.Conn) {
+	empty, _ := Pack(&Message{Type: MessageType_EMPTY})
+	topics := map[string]*Topic{}
 LOOP:
 	for {
-		select {
-		case <-topic.ping:
-			err := Send(c, &Message{Topic: topic.name, Type: MessageType_POLL})
-			if err != nil {
-				log.Warnf("failed to request poll: %s", err.Error())
-				break LOOP
+		poll, err := ReceivePoll(c)
+		if err != nil {
+			log.Printf("error waiting for poll: %s", err.Error())
+			break LOOP
+		}
+
+		//		log.Printf("received poll: %s", poll)
+		// XXX: SHUFFLE
+		for _, t := range poll.Topic {
+			topic, ok := topics[t]
+			if !ok {
+				topic = btb.getTopic(t)
+				topics[t] = topic
 			}
-			Receive(c)
 
 			select {
 			case request := <-topic.requests:
+				atomic.AddUint64(&btb.consumedCount, 1)
 				deadline := time.Now().Add(time.Duration(request.message.TimeoutMs) * time.Millisecond)
 				//				c.SetDeadline(deadline)
-				err := Send(c, request.message)
+				err := Send(c, Marshallable(request.message))
+
 				if err != nil {
 					log.Printf("error sending: %s deadline: %s timeout ms: %d", err.Error(), deadline, request.message.TimeoutMs)
 					break LOOP
 				}
-				reply, err := Receive(c)
+
+				reply, err := ReceiveRequest(c)
+
 				if err != nil {
 					log.Printf("error waiting for reply: %s", err.Error())
 					break LOOP
@@ -126,54 +130,23 @@ LOOP:
 
 				remote := request.origin
 				//				remote.SetWriteDeadline(deadline)
-				err = Send(remote, reply)
+				//				_, err = remote.Write(reply)
+				err = Send(remote, Marshallable(reply))
 				if err != nil {
 					remote.Close()
 					log.Warnf("failed to reply: %s", err.Error())
 				}
+
+				continue LOOP
 			default:
-				request := &Message{Topic: topic.name, Type: MessageType_EMPTY}
-				err := Send(c, request)
-				if err != nil {
-					log.Warnf("failed to reply empty: %s", err.Error())
-					break LOOP
-				}
 			}
+		}
+
+		_, err = c.Write(empty)
+		if err != nil {
+			log.Warnf("failed to reply empty: %s", err.Error())
+			break LOOP
 		}
 	}
 	c.Close()
-}
-
-func (btb *BackToBack) clientWorker(c net.Conn) {
-	//log.Infof("worker for %s started", c.RemoteAddr())
-	// make sure we can at least do PINGPONG
-	message, err := Receive(c)
-	topic := btb.getTopic(message.Topic)
-	if err != nil {
-		log.Warnf("err receive: %s", err.Error())
-		c.Close()
-		return
-	}
-
-	if message.Type == MessageType_I_AM_PRODUCER || message.Type == MessageType_I_AM_CONSUMER {
-		pong := &Message{
-			Type:  MessageType_PONG,
-			Topic: message.Topic,
-		}
-		err = Send(c, pong)
-		if err != nil {
-			log.Warnf("err pong: %s", err.Error())
-			c.Close()
-			return
-		}
-		if message.Type == MessageType_I_AM_PRODUCER {
-			btb.clientWorkerProducer(topic, c)
-		} else {
-			btb.clientWorkerConsumer(topic, c)
-		}
-	} else {
-		log.Warnf("did not receive PING, %s", message)
-		c.Close()
-		return
-	}
 }
