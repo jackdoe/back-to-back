@@ -17,7 +17,6 @@ CONNECT:
 		for {
 			<-time.After(100 * time.Millisecond)
 			// consume while messages are available
-			n := 0
 			for {
 				_, err := conn.Write(poll)
 				if err != nil {
@@ -48,9 +47,7 @@ CONNECT:
 					conn.Close()
 					continue CONNECT
 				}
-				n++
 			}
-
 		}
 	}
 }
