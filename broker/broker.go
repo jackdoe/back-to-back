@@ -12,8 +12,8 @@ import (
 )
 
 type MessageAndOrigin struct {
-	message *Message
-	origin  net.Conn
+	message      *Message
+	replyChannel chan *Message
 }
 
 type Topic struct {
@@ -27,6 +27,7 @@ type BackToBack struct {
 	topics        map[string]*Topic
 	producedCount uint64
 	consumedCount uint64
+	uuid          uint64
 	sync.RWMutex
 }
 
@@ -62,11 +63,9 @@ func (btb *BackToBack) Listen(listener net.Listener, worker func(net.Conn)) {
 			log.Warnf("accept error: %s", err.Error())
 			break
 		}
-
 		if tc, ok := fd.(*net.TCPConn); ok {
 			tc.SetNoDelay(true)
 		}
-
 		go worker(fd)
 	}
 
@@ -75,22 +74,32 @@ func (btb *BackToBack) Listen(listener net.Listener, worker func(net.Conn)) {
 func (btb *BackToBack) String() string {
 	return fmt.Sprintf("producedCount: %d consumedCount: %d", btb.producedCount, btb.consumedCount)
 }
+
 func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
+	replyChannel := make(chan *Message, 1000) // XXX: config
 	for {
 		message, err := ReceiveRequest(c)
-
+		uuid := atomic.AddUint64(&btb.uuid, 1)
 		if err != nil {
 			log.Warnf("err receive: %s", err.Error())
-			c.Close()
-			return
+			break
 		}
-
-		r := MessageAndOrigin{message, c}
+		message.Uuid = uuid
+		r := MessageAndOrigin{message, replyChannel}
 		topic := btb.getTopic(message.Topic)
 
 		topic.requests <- r
+		reply := <-replyChannel
+		err = Send(c, Marshallable(reply))
+		if err != nil {
+			log.Warnf("err reply: %s", err.Error())
+			break
+		}
+
 		atomic.AddUint64(&btb.producedCount, 1)
 	}
+	c.Close()
+	close(replyChannel)
 }
 
 func (btb *BackToBack) ClientWorkerConsumer(c net.Conn) {
@@ -106,8 +115,6 @@ LOOP:
 			break LOOP
 		}
 
-		//		log.Printf("received poll: %s", poll)
-		// XXX: SHUFFLE
 		for _, t := range poll.Topic {
 			topic, ok := topics[t]
 			if !ok {
@@ -118,39 +125,23 @@ LOOP:
 			select {
 			case request := <-topic.requests:
 				atomic.AddUint64(&btb.consumedCount, 1)
-				remote := request.origin
+
+				remote := request.replyChannel
 				deadline := time.Now().Add(time.Duration(request.message.TimeoutMs) * time.Millisecond)
 				c.SetDeadline(deadline)
+
 				err := Send(c, Marshallable(request.message))
-
 				if err != nil {
-					log.Printf("error sending: %s deadline: %s timeout ms: %d", err.Error(), deadline, request.message.TimeoutMs)
-
-					err = Send(remote, Marshallable(&Message{Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}))
-					if err != nil {
-						log.Warnf("failed to reply: %s", err.Error())
-					}
-
+					remote <- &Message{Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}
 					break LOOP
 				}
 
 				reply, err := ReceiveRequest(c)
 				if err != nil {
-					log.Printf("error waiting for reply: %s", err.Error())
-
-					err = Send(remote, Marshallable(&Message{Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}))
-					if err != nil {
-						log.Warnf("failed to reply: %s", err.Error())
-					}
-
+					remote <- &Message{Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}
 					continue LOOP
 				}
-
-				err = Send(remote, Marshallable(reply))
-				if err != nil {
-					remote.Close()
-					log.Warnf("failed to reply: %s", err.Error())
-				}
+				remote <- reply
 
 				continue LOOP
 			default:

@@ -66,6 +66,7 @@ func ReceiveRequest(c net.Conn) (*Message, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	//log.Printf("received message %s", message)
 	return message, nil
 }

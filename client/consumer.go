@@ -13,7 +13,7 @@ func ConsumeConnection(addr string, topics []string, cb func(*Message) *Message)
 CONNECT:
 	for {
 		conn := Connect(addr)
-	REQUEST:
+	POLL:
 		for {
 			<-time.After(100 * time.Millisecond)
 			// consume while messages are available
@@ -33,7 +33,7 @@ CONNECT:
 				}
 
 				if m.Type == MessageType_EMPTY {
-					continue REQUEST
+					continue POLL
 				}
 
 				reply := cb(m)

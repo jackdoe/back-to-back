@@ -4,9 +4,10 @@ package spec;
 
 message Message {
         string topic = 1;
-        bytes data = 3;
-        uint32 timeoutMs = 6;
         MessageType type = 2;
+        bytes data = 3;
+        uint64 uuid = 4;
+        uint32 timeoutMs = 6;
 }
 
 enum MessageType {
@@ -18,5 +19,5 @@ enum MessageType {
 
 message Poll {
         repeated string topic = 1;
+        uint32 batchSize = 2;
 }
-
