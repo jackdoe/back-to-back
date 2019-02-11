@@ -63,6 +63,10 @@ func (btb *BackToBack) Listen(listener net.Listener, worker func(net.Conn)) {
 			break
 		}
 
+		if tc, ok := fd.(*net.TCPConn); ok {
+			tc.SetNoDelay(true)
+		}
+
 		go worker(fd)
 	}
 
@@ -92,8 +96,10 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 func (btb *BackToBack) ClientWorkerConsumer(c net.Conn) {
 	empty, _ := Pack(&Message{Type: MessageType_EMPTY})
 	topics := map[string]*Topic{}
+	never := time.Time{}
 LOOP:
 	for {
+		c.SetDeadline(never)
 		poll, err := ReceivePoll(c)
 		if err != nil {
 			log.Printf("error waiting for poll: %s", err.Error())
@@ -112,25 +118,34 @@ LOOP:
 			select {
 			case request := <-topic.requests:
 				atomic.AddUint64(&btb.consumedCount, 1)
+				remote := request.origin
 				deadline := time.Now().Add(time.Duration(request.message.TimeoutMs) * time.Millisecond)
-				//				c.SetDeadline(deadline)
+				c.SetDeadline(deadline)
 				err := Send(c, Marshallable(request.message))
 
 				if err != nil {
 					log.Printf("error sending: %s deadline: %s timeout ms: %d", err.Error(), deadline, request.message.TimeoutMs)
+
+					err = Send(remote, Marshallable(&Message{Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}))
+					if err != nil {
+						log.Warnf("failed to reply: %s", err.Error())
+					}
+
 					break LOOP
 				}
 
 				reply, err := ReceiveRequest(c)
-
 				if err != nil {
 					log.Printf("error waiting for reply: %s", err.Error())
-					break LOOP
+
+					err = Send(remote, Marshallable(&Message{Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}))
+					if err != nil {
+						log.Warnf("failed to reply: %s", err.Error())
+					}
+
+					continue LOOP
 				}
 
-				remote := request.origin
-				//				remote.SetWriteDeadline(deadline)
-				//				_, err = remote.Write(reply)
 				err = Send(remote, Marshallable(reply))
 				if err != nil {
 					remote.Close()

@@ -21,7 +21,7 @@ func main() {
 	work := func() {
 		conn := Connect(*pserver)
 		for i := 0; i < *pn; i++ {
-			_, err := client.ProduceIO(conn, &Message{
+			res, err := client.ProduceIO(conn, &Message{
 				Topic:     *ptopic,
 				Data:      []byte(*pmessage),
 				TimeoutMs: 1000,
@@ -30,7 +30,10 @@ func main() {
 				log.Printf("failed to produce: %s", err.Error())
 				conn.Close()
 				conn = Connect(*pserver)
+			} else if res.Type == MessageType_ERROR {
+				log.Printf("error: %s", string(res.Data))
 			}
+
 			//log.Printf("%s", res.String())
 		}
 

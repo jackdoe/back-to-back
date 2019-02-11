@@ -94,6 +94,9 @@ func Connect(addr string) net.Conn {
 			time.Sleep(1 * time.Second)
 			continue
 		}
+		if tc, ok := conn.(*net.TCPConn); ok {
+			tc.SetNoDelay(true)
+		}
 		return conn
 	}
 }
