@@ -44,6 +44,7 @@ func main() {
 		log.Info("closing..")
 		sockConsumer.Close()
 		sockProducer.Close()
+		os.Exit(0)
 	}()
 
 	for {
