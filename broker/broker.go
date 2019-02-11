@@ -44,7 +44,7 @@ func (btb *BackToBack) getTopic(topic string) *Topic {
 	if !ok {
 		btb.Lock()
 		t = &Topic{
-			requests: make(chan MessageAndOrigin, 10000),
+			requests: make(chan MessageAndOrigin, 1000),
 			name:     topic,
 		}
 		btb.topics[topic] = t
@@ -76,20 +76,32 @@ func (btb *BackToBack) String() string {
 }
 
 func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
-	replyChannel := make(chan *Message, 1000) // XXX: config
+	// must have buffer of 1
+	// in case there is *no* consumer we should timeout in the client
+	// otherwise we will get unordered messages
+	// meaning that new request comes, and we consumer from the reply channel
+	// but it could contain old request that timed out
+	// also makes it easier to close the channel in case of error
+	replyChannel := make(chan *Message, 1)
+	topics := map[string]*Topic{}
+
 	for {
 		message, err := ReceiveRequest(c)
-		uuid := atomic.AddUint64(&btb.uuid, 1)
 		if err != nil {
 			log.Warnf("err receive: %s", err.Error())
 			break
 		}
-		message.Uuid = uuid
 		r := MessageAndOrigin{message, replyChannel}
-		topic := btb.getTopic(message.Topic)
+
+		topic, ok := topics[message.Topic]
+		if !ok {
+			topic = btb.getTopic(message.Topic)
+			topics[message.Topic] = topic
+		}
 
 		topic.requests <- r
 		reply := <-replyChannel
+
 		err = Send(c, Marshallable(reply))
 		if err != nil {
 			log.Warnf("err reply: %s", err.Error())
@@ -98,7 +110,9 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 
 		atomic.AddUint64(&btb.producedCount, 1)
 	}
+
 	c.Close()
+	log.Warnf("closing producer %s, done", c.RemoteAddr())
 	close(replyChannel)
 }
 
@@ -141,8 +155,8 @@ LOOP:
 					remote <- &Message{Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}
 					continue LOOP
 				}
-				remote <- reply
 
+				remote <- reply
 				continue LOOP
 			default:
 			}

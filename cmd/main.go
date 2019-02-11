@@ -9,6 +9,8 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/debug"
 	"syscall"
 	"time"
 )
@@ -47,9 +49,16 @@ func main() {
 		os.Exit(0)
 	}()
 
+	i := 0
 	for {
 		log.Infof("%s", btb.String())
 		time.Sleep(1 * time.Second)
+		i++
+		if i%10 == 0 {
+			runtime.GC()
+			debug.FreeOSMemory()
+			log.Infof("GC")
+		}
 	}
 	os.Exit(0)
 }

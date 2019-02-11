@@ -20,6 +20,7 @@ func main() {
 	go func() {
 		for {
 			log.Printf("received so far: %d", i)
+
 			time.Sleep(1 * time.Second)
 		}
 	}()
