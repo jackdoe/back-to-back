@@ -45,6 +45,8 @@ func Receive(c net.Conn) ([]byte, error) {
 	}
 
 	dataLen := binary.LittleEndian.Uint32(hdr)
+	// log.Printf("data len: %d", dataLen)
+	// XXX: protect for size
 	data := make([]byte, dataLen)
 
 	_, err = io.ReadFull(c, data)

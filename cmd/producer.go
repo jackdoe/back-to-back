@@ -24,7 +24,8 @@ func main() {
 	}()
 
 	work := func() {
-		conn := Connect(*pserver)
+		conn :=
+			Connect(*pserver)
 		for i := 0; i < *pn; i++ {
 			res, err := client.ProduceIO(conn, &Message{
 				Topic:     *ptopic,

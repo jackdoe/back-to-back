@@ -166,6 +166,7 @@ LOOP:
 		}
 
 		_, err = c.Write(empty)
+
 		if err != nil {
 			log.Warnf("failed to reply empty: %s", err.Error())
 			break LOOP
