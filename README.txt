@@ -1,4 +1,5 @@
-~/work/back-to-back/cmd % time go run producer.go -n 20000 -workers 20
 
-2019/02/09 23:16:49 ... 400000 messages, took: 3.86s, speed: 103672.58 per second
+
+2019/02/12 01:07:23 ... 200000 messages, took: 6.22s, speed: 32143.80 per second
+
 

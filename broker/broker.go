@@ -8,7 +8,6 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 type MessageAndOrigin struct {
@@ -88,9 +87,10 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 	for {
 		message, err := ReceiveRequest(c)
 		if err != nil {
-			log.Warnf("err receive: %s", err.Error())
+			//			log.Warnf("err receive: %s", err.Error())
 			break
 		}
+
 		r := MessageAndOrigin{message, replyChannel}
 
 		topic, ok := topics[message.Topic]
@@ -112,17 +112,17 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 	}
 
 	c.Close()
-	log.Warnf("closing producer %s, done", c.RemoteAddr())
 	close(replyChannel)
 }
 
 func (btb *BackToBack) ClientWorkerConsumer(c net.Conn) {
 	empty, _ := Pack(&Message{Type: MessageType_EMPTY})
 	topics := map[string]*Topic{}
-	never := time.Time{}
+	// dont do any deadlines here, they will be handled by the producer
+	// just let nature take its course, otherwise everything gets 10 times more
+	// complicated
 LOOP:
 	for {
-		c.SetDeadline(never)
 		poll, err := ReceivePoll(c)
 		if err != nil {
 			log.Printf("error waiting for poll: %s", err.Error())
@@ -141,8 +141,6 @@ LOOP:
 				atomic.AddUint64(&btb.consumedCount, 1)
 
 				remote := request.replyChannel
-				deadline := time.Now().Add(time.Duration(request.message.TimeoutMs) * time.Millisecond)
-				c.SetDeadline(deadline)
 
 				err := Send(c, Marshallable(request.message))
 				if err != nil {
@@ -153,7 +151,12 @@ LOOP:
 				reply, err := ReceiveRequest(c)
 				if err != nil {
 					remote <- &Message{Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}
-					continue LOOP
+					break LOOP
+				}
+
+				if reply.Type != MessageType_REPLY {
+					remote <- &Message{Type: MessageType_ERROR, Data: []byte("broken consumer"), Topic: t}
+					break LOOP
 				}
 
 				remote <- reply

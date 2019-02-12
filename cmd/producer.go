@@ -6,6 +6,8 @@ import (
 	. "github.com/jackdoe/back-to-back/spec"
 	. "github.com/jackdoe/back-to-back/util"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"time"
 )
 
@@ -17,6 +19,9 @@ func main() {
 	var ptopic = flag.String("topic", "abc", "topic")
 	flag.Parse()
 	done := make(chan int, *pworkers)
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6061", nil))
+	}()
 
 	work := func() {
 		conn := Connect(*pserver)
@@ -34,7 +39,7 @@ func main() {
 				log.Printf("error: %s", string(res.Data))
 			}
 
-			//log.Printf("%s", res.String())
+			//			log.Printf("%s", res.String())
 		}
 
 		conn.Close()

@@ -40,7 +40,7 @@ CONNECT:
 
 				reply.Topic = m.Topic
 				reply.Type = MessageType_REPLY
-
+				//				log.Printf("sending: %s request: %s", reply, m)
 				err = Send(conn, Marshallable(reply))
 				if err != nil {
 					log.Warnf("error replying %s", err)

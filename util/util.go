@@ -29,7 +29,7 @@ func Pack(message Marshallable) ([]byte, error) {
 
 func Send(c net.Conn, message Marshallable) error {
 	data, err := Pack(message)
-	//log.Printf("sending %s", message.String())
+	//log.Printf("sending %s len %d", message.String(), len(data))
 	if err != nil {
 		return err
 	}
@@ -67,7 +67,7 @@ func ReceiveRequest(c net.Conn) (*Message, error) {
 		return nil, err
 	}
 
-	//log.Printf("received message %s", message)
+	//	log.Printf("received message %s", message)
 	return message, nil
 }
 

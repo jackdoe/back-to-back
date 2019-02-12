@@ -11,13 +11,13 @@ message Message {
 }
 
 enum MessageType {
-     REPLY = 0;
-     ERROR = 1;
+     UNKNOWN = 0;
+     REPLY = 1;
+     ERROR = 2;
      EMPTY = 3;
      REQUEST = 4;
 }
 
 message Poll {
-        repeated string topic = 1;
-        uint32 batchSize = 2;
+        repeated string topic = 100;
 }

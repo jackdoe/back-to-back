@@ -5,6 +5,8 @@ import (
 	client "github.com/jackdoe/back-to-back/client"
 	. "github.com/jackdoe/back-to-back/spec"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"sync/atomic"
 	"time"
 )
@@ -24,12 +26,16 @@ func main() {
 			time.Sleep(1 * time.Second)
 		}
 	}()
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6062", nil))
+	}()
 
 	client.Consume([]string{*pserver}, []string{*ptopic}, *pworkers, func(m *Message) *Message {
 		atomic.AddUint64(&i, 1)
-
+		//time.Sleep(1 * time.Second)
 		return &Message{
-			Data: []byte(*preply),
+			Topic: *ptopic,
+			Data:  []byte(*preply),
 		}
 	})
 
