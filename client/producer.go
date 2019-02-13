@@ -7,15 +7,12 @@ import (
 	log "github.com/sirupsen/logrus"
 	"math/rand"
 	"net"
-	"sync"
 	"time"
 )
 
 type broker struct {
-	c       net.Conn
-	addr    string
-	working bool
-	sync.Mutex
+	c    net.Conn
+	addr string
 }
 
 func newBroker(addr string) *broker {
@@ -34,20 +31,14 @@ func (b *broker) produceIO(request *Message) (*Message, error) {
 
 	err := Send(b.c, Marshallable(request))
 	if err != nil {
-		b.working = false
-		b.c.Close()
 		return nil, err
 	}
 	m, err := ReceiveRequest(b.c)
 	if err != nil {
-		b.working = false
-		b.c.Close()
 		return nil, err
 	}
 
 	if m.Type == MessageType_ERROR {
-		b.working = false
-		b.c.Close()
 		return nil, errors.New(string(m.Data))
 	}
 
@@ -59,17 +50,12 @@ func (b *broker) produceIO(request *Message) (*Message, error) {
 }
 
 func (b *broker) reconnect() {
-	b.Lock()
-	defer b.Unlock()
-
 	b.c.Close()
 	b.c = Connect(b.addr)
-	b.working = true
 }
 
 type Producer struct {
 	brokers         chan *broker
-	idx             uint32
 	reconnectPlease chan *broker
 }
 
