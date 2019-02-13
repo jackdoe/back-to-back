@@ -73,33 +73,4 @@ public class Consumer {
   public interface Worker {
     IO.Message process(IO.Message m);
   }
-
-  public static class Logistic {
-    private double rate;
-    private double[] weights;
-
-    public Logistic(int n) {
-      this.rate = 0.001;
-      weights = new double[n];
-    }
-
-    private static double sigmoid(double z) {
-      return 1.0 / (1.0 + Math.exp(-z));
-    }
-
-    public void train(int label, int[] x) {
-      double predicted = classify(x);
-      for (int j = 0; j < weights.length; j++) {
-        weights[j] = weights[j] + rate * (label - predicted) * x[j];
-      }
-    }
-
-    private double classify(int[] x) {
-      double logit = .0;
-      for (int i = 0; i < weights.length; i++) {
-        logit += weights[i] * x[i];
-      }
-      return sigmoid(logit);
-    }
-  }
 }
