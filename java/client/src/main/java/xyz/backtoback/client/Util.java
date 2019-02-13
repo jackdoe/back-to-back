@@ -45,9 +45,8 @@ public class Util {
     channel.write(new ByteBuffer[] {header, b});
   }
 
-  static SocketChannel connect(String h, int port, int retries) throws IOException {
-    IOException last = null;
-    for (int i = 0; i < retries; i++) {
+  static SocketChannel connect(String h, int port) {
+    while (true) {
       try {
         SocketChannel c = SocketChannel.open();
         c.connect(new InetSocketAddress(h, port));
@@ -56,7 +55,6 @@ public class Util {
         c.finishConnect();
         return c;
       } catch (IOException e) {
-        last = e;
         logger.warn("failed to connect, retrying", e);
         try {
           Thread.sleep(1000);
@@ -64,6 +62,5 @@ public class Util {
         }
       }
     }
-    throw last;
   }
 }

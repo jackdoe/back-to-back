@@ -77,7 +77,9 @@ func NewProducer(addrs []string) *Producer {
 	rand.Shuffle(len(addrs), func(i, j int) {
 		addrs[i], addrs[j] = addrs[j], addrs[i]
 	})
+
 	log.Infof("connecting to %v", addrs)
+
 	p := &Producer{
 		brokers:         make(chan *broker, len(addrs)),
 		reconnectPlease: make(chan *broker, len(addrs)),
@@ -112,6 +114,7 @@ PICK:
 			p.reconnectPlease <- b
 			continue PICK
 		}
+
 		p.brokers <- b
 		return reply, nil
 	}

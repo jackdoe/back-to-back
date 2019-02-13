@@ -20,7 +20,7 @@ public class Consumer {
   public Consumer(String host, int port) throws IOException {
     this.host = host;
     this.port = port;
-    this.channel = connect(host, port, 1000000);
+    this.channel = connect(host, port);
   }
 
   public void work(Map<String, Worker> dispatch) throws IOException, InterruptedException {
@@ -65,7 +65,7 @@ public class Consumer {
         }
       }
       channel.socket().close();
-      this.channel = connect(this.host, this.port, 100000);
+      this.channel = connect(this.host, this.port);
     }
   }
 

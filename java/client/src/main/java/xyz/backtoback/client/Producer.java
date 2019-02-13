@@ -5,76 +5,66 @@ import org.slf4j.LoggerFactory;
 import xyz.backtoback.proto.IO;
 
 import java.io.IOException;
-import java.nio.channels.SocketChannel;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-
-import static xyz.backtoback.client.Util.*;
 
 public class Producer {
   private static final Logger logger = LoggerFactory.getLogger(Producer.class);
   static ExecutorService producePool = Executors.newCachedThreadPool();
-  private SocketChannel channel;
-  private String host;
-  private int port;
+  ArrayBlockingQueue<Broker> brokers;
+  ArrayBlockingQueue<Broker> reconnect;
 
-  public Producer(String host, int port) throws IOException {
-    this.host = host;
-    this.port = port;
-    reconnect();
-  }
+  Thread reconnector;
 
-  public void reconnect() throws IOException {
-    this.channel = connect(host, port, 1000000);
-  }
+  public Producer(List<String> addrs) throws IOException {
+    Collections.shuffle(addrs);
 
-  private IO.Message io(String topic, int timeoutMs, IO.Message message) throws IOException {
-    send(
-        channel,
-        message
-            .toBuilder()
-            .setType(IO.MessageType.REQUEST)
-            .setTopic(topic)
-            .setTimeoutMs(timeoutMs)
-            .build());
-    return receive(channel);
+    brokers = new ArrayBlockingQueue<>(addrs.size());
+    reconnect = new ArrayBlockingQueue<>(addrs.size());
+    for (String addr : addrs) {
+      HostAndPort hp = HostAndPort.fromString(addr);
+      Broker b = new Broker(hp.getHost(), hp.getPort());
+      brokers.add(b);
+    }
+
+    reconnector =
+        new Thread(
+            () -> {
+              while (true) {
+                try {
+                  Broker b = reconnect.take();
+                  logger.info("reconnecting {}", b);
+                  CompletableFuture.runAsync(
+                      () -> {
+                        b.reconnect();
+                        brokers.add(b);
+                      });
+                } catch (Exception e) {
+                  throw new RuntimeException(e);
+                }
+              }
+            });
+    reconnector.start();
   }
 
   public IO.Message produce(String topic, IO.Message message) throws Exception {
-    return produce(topic, 0, true, message);
+    return produce(topic, 0, message);
   }
 
   public IO.Message produce(String topic, int timeoutMs, IO.Message message) throws Exception {
-    return produce(topic, timeoutMs, true, message);
-  }
-
-  public synchronized IO.Message produce(
-      String topic, int timeoutMs, boolean doReconnect, IO.Message message) throws Exception {
     while (true) {
-
+      Broker b = brokers.take();
       try {
-        if (timeoutMs == 0) return io(topic, timeoutMs, message);
-
-        return CompletableFuture.supplyAsync(
-                () -> {
-                  try {
-                    return io(topic, timeoutMs, message);
-                  } catch (Exception e) {
-                    throw new RuntimeException(e);
-                  }
-                },
-                producePool)
-            .get(timeoutMs, TimeUnit.MILLISECONDS);
+        IO.Message reply = b.produce(topic, timeoutMs, message);
+        brokers.add(b);
+        return reply;
       } catch (Exception e) {
-        channel.socket().close();
-        logger.warn("failed to produce", e);
-        if (doReconnect) {
-          reconnect();
-        } else {
-          throw e;
-        }
+        logger.warn("failed to produce, picking another broker", e);
+        reconnect.add(b);
       }
     }
   }
