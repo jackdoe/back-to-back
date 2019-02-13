@@ -70,8 +70,8 @@ public class Main {
       IO.Message m =
           p.produce(
               "abc",
-              0,
               IO.Message.newBuilder()
+                  .setTimeoutMs(0)
                   .setData(ByteString.copyFrom("hello world".getBytes()))
                   .build());
       n.getAndIncrement();

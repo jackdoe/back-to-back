@@ -52,14 +52,10 @@ public class Producer {
   }
 
   public IO.Message produce(String topic, IO.Message message) throws Exception {
-    return produce(topic, 0, message);
-  }
-
-  public IO.Message produce(String topic, int timeoutMs, IO.Message message) throws Exception {
     while (true) {
       Broker b = brokers.take();
       try {
-        IO.Message reply = b.produce(topic, timeoutMs, message);
+        IO.Message reply = b.produce(topic, message.getTimeoutMs(), message);
         brokers.add(b);
         return reply;
       } catch (Exception e) {
