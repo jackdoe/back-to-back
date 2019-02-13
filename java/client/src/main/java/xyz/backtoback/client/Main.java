@@ -11,7 +11,7 @@ public class Main {
 
   public static void main(String[] args) throws Exception {
 
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 1; i++) {
       new Thread(
               () -> {
                 try {
@@ -25,7 +25,7 @@ public class Main {
 
     final AtomicLong n = new AtomicLong(0);
 
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 1; i++) {
       new Thread(
               () -> {
                 try {

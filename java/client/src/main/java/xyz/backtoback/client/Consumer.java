@@ -28,15 +28,19 @@ public class Consumer {
 
   public void work(Map<String, Worker> dispatch) throws IOException, InterruptedException {
     IO.Poll poll = IO.Poll.newBuilder().addAllTopic(dispatch.keySet()).build();
-    int r = new Random(System.nanoTime()).nextInt(50);
+    int r = new Random(System.nanoTime()).nextInt(20);
+
+    int maxSleep = 100 - r;
+    int sleep = maxSleep;
+
     POLL:
     for (; ; ) {
-      int sleep = 100 - r;
-      Thread.sleep(sleep);
+      if (sleep > 0) Thread.sleep(sleep);
       for (; ; ) {
         send(channel, poll);
         IO.Message m = receive(channel);
         if (m.getType().getNumber() == IO.MessageType.EMPTY.getNumber()) {
+          if (sleep < maxSleep) sleep++;
           continue POLL;
         }
         IO.Message reply =
@@ -48,6 +52,9 @@ public class Consumer {
                 .setType(IO.MessageType.REPLY)
                 .build();
         send(channel, reply);
+        if (sleep >= 5) {
+          sleep -= 5;
+        }
       }
     }
   }
