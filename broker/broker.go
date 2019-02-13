@@ -24,8 +24,9 @@ type Topic struct {
 }
 
 type BackToBack struct {
-	topics map[string]*Topic
-	uuid   uint64
+	topics    map[string]*Topic
+	pollCount uint64
+	uuid      uint64
 	sync.RWMutex
 }
 
@@ -79,7 +80,7 @@ func (btb *BackToBack) DumpStats() {
 		log.Infof("%s: producedCount: %d consumedCount: %d", name, t.producedCount, t.consumedCount)
 	}
 	btb.RUnlock()
-	log.Infof("total: producedCount: %d consumedCount: %d", producedCount, consumedCount)
+	log.Infof("total: producedCount: %d consumedCount: %d, pollCount: %d", producedCount, consumedCount, btb.pollCount)
 }
 
 func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
@@ -132,6 +133,7 @@ func (btb *BackToBack) ClientWorkerConsumer(c net.Conn) {
 LOOP:
 	for {
 		poll, err := ReceivePoll(c)
+		atomic.AddUint64(&btb.pollCount, 1)
 		if err != nil {
 			log.Printf("error waiting for poll: %s", err.Error())
 			break LOOP
