@@ -16,8 +16,8 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class BackToBackPoC {
+  static int THREADS = 12;
   // static int THREADS = 12;
-  static int THREADS = 4;
   static ExecutorService testPool;
   static ExecutorService producerPool;
   static ExecutorService consumerPool;
