@@ -27,8 +27,9 @@ class Broker {
   }
 
   public void reconnect() {
+    logger.info("reconnecting {}", this.toString());
     try {
-      if (channel.isConnected()) channel.socket().close();
+      channel.socket().close();
     } catch (Exception e) {
       logger.warn("failed to close,e");
     }
