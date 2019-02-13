@@ -25,7 +25,14 @@ public class Producer {
   }
 
   public synchronized IO.Message produce(String topic, IO.Message message) throws IOException {
-    send(channel, message.toBuilder().setTopic(topic).setTimeoutMs(1000).build());
+    send(
+        channel,
+        message
+            .toBuilder()
+            .setType(IO.MessageType.REQUEST)
+            .setTopic(topic)
+            .setTimeoutMs(1000)
+            .build());
     return receive(channel);
   }
 }
