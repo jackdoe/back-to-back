@@ -34,13 +34,15 @@ public class Consumer {
     while (true) {
       POLL:
       while (true) {
-        if (sleep > 0) Thread.sleep(sleep);
+        if (sleep == maxSleep) Thread.sleep(sleep);
+
         while (true) {
           try {
             send(channel, poll);
             IO.Message m = receive(channel);
             if (m.getType().getNumber() == IO.MessageType.EMPTY.getNumber()) {
               if (sleep < maxSleep) sleep++;
+
               continue POLL;
             }
             IO.Message reply =
@@ -53,9 +55,9 @@ public class Consumer {
                     .build();
             send(channel, reply);
 
-            if (sleep >= 5) {
-              sleep -= 5;
-            }
+            // this is a bit aggressive
+            // assume traffic up to next maxSleep
+            sleep = 0;
           } catch (IOException e) {
             logger.warn("error consuming", e);
             break POLL;
@@ -70,5 +72,34 @@ public class Consumer {
   @FunctionalInterface
   public interface Worker {
     IO.Message process(IO.Message m);
+  }
+
+  public static class Logistic {
+    private double rate;
+    private double[] weights;
+
+    public Logistic(int n) {
+      this.rate = 0.001;
+      weights = new double[n];
+    }
+
+    private static double sigmoid(double z) {
+      return 1.0 / (1.0 + Math.exp(-z));
+    }
+
+    public void train(int label, int[] x) {
+      double predicted = classify(x);
+      for (int j = 0; j < weights.length; j++) {
+        weights[j] = weights[j] + rate * (label - predicted) * x[j];
+      }
+    }
+
+    private double classify(int[] x) {
+      double logit = .0;
+      for (int i = 0; i < weights.length; i++) {
+        logit += weights[i] * x[i];
+      }
+      return sigmoid(logit);
+    }
   }
 }
