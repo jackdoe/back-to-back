@@ -12,18 +12,18 @@ import java.util.concurrent.atomic.AtomicLong;
 public class Main {
 
   public static void main(String[] args) throws Exception {
+    Map<String, Consumer.Worker> dispatch = new HashMap<>();
+    dispatch.put(
+        "abc",
+        (m) -> {
+          return IO.Message.newBuilder()
+              .setData(ByteString.copyFrom("hello from consumer".getBytes()))
+              .build();
+        });
+    List<String> addrs = new ArrayList<>();
+    for (int i = 0; i < 9; i++) addrs.add("localhost:9001");
 
-    for (int i = 0; i < 9; i++) {
-      new Thread(
-              () -> {
-                try {
-                  consume();
-                } catch (Exception e) {
-                  throw new RuntimeException(e);
-                }
-              })
-          .start();
-    }
+    Consumer c = new Consumer(addrs, dispatch);
 
     final AtomicLong n = new AtomicLong(0);
 
@@ -49,20 +49,6 @@ public class Main {
       n.set(0);
       Thread.sleep(1000);
     }
-  }
-
-  public static void consume() throws Exception {
-    Consumer c = new Consumer("localhost", 9001);
-    Map<String, Consumer.Worker> dispatch = new HashMap<>();
-    dispatch.put(
-        "abc",
-        (m) -> {
-          return IO.Message.newBuilder()
-              .setData(ByteString.copyFrom("hello from consumer".getBytes()))
-              .build();
-        });
-
-    c.work(dispatch);
   }
 
   public static void produce(Producer p, AtomicLong n) throws Exception {

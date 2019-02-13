@@ -36,7 +36,7 @@ func NewConsumer(addrs []string, dispatch map[string]func(*Message) *Message) *C
 }
 
 func (c *Consumer) consume(b *broker) {
-	err := b.consume(c.sem, c.dispatch)
+	err := b.consume(c.sem, c.dispatch) // has to exit in order to be reconnected
 	if err != nil {
 		log.Info("error consuming[%s]: %s", b.addr, err.Error())
 		c.reconnectPlease <- b

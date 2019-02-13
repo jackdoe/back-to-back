@@ -17,7 +17,6 @@ public class Producer {
   static ExecutorService producePool = Executors.newCachedThreadPool();
   ArrayBlockingQueue<Broker> brokers;
   ArrayBlockingQueue<Broker> reconnect;
-
   Thread reconnector;
 
   public Producer(List<String> addrs) throws IOException {

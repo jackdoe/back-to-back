@@ -5,68 +5,58 @@ import org.slf4j.LoggerFactory;
 import xyz.backtoback.proto.IO;
 
 import java.io.IOException;
-import java.nio.channels.SocketChannel;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
-import java.util.Random;
-
-import static xyz.backtoback.client.Util.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Semaphore;
 
 public class Consumer {
   private static final Logger logger = LoggerFactory.getLogger(Consumer.class);
-  private SocketChannel channel;
-  private String host;
-  private int port;
+  private ArrayBlockingQueue<Broker> reconnect;
+  private Thread reconnector;
+  private Semaphore sem;
 
-  public Consumer(String host, int port) throws IOException {
-    this.host = host;
-    this.port = port;
-    this.channel = connect(host, port);
+  public Consumer(List<String> addrs, Map<String, Worker> dispatch) throws IOException {
+    Collections.shuffle(addrs);
+    sem = new Semaphore(addrs.size());
+    reconnect = new ArrayBlockingQueue<>(addrs.size());
+    for (String addr : addrs) {
+      HostAndPort hp = HostAndPort.fromString(addr);
+      Broker b = new Broker(hp.getHost(), hp.getPort());
+      start(b, dispatch);
+    }
+
+    reconnector =
+        new Thread(
+            () -> {
+              while (true) {
+                try {
+                  Broker b = reconnect.take();
+                  logger.info("reconnecting {}", b);
+                  CompletableFuture.runAsync(
+                      () -> {
+                        b.reconnect();
+                        start(b, dispatch);
+                      });
+                } catch (Exception e) {
+                  throw new RuntimeException(e);
+                }
+              }
+            });
+    reconnector.start();
   }
 
-  public void work(Map<String, Worker> dispatch) throws IOException, InterruptedException {
-    IO.Poll poll = IO.Poll.newBuilder().addAllTopic(dispatch.keySet()).build();
-    int r = new Random(System.nanoTime()).nextInt(20);
-
-    int maxSleep = 100 - r;
-    int sleep = maxSleep;
-
-    CONNECT:
-    while (true) {
-      POLL:
-      while (true) {
-        if (sleep > maxSleep / 4) Thread.sleep(maxSleep);
-
-        while (true) {
+  private void start(Broker b, Map<String, Worker> dispatch) {
+    CompletableFuture.runAsync(
+        () -> {
           try {
-            send(channel, poll);
-            IO.Message m = receive(channel);
-            if (m.getType().getNumber() == IO.MessageType.EMPTY.getNumber()) {
-              if (sleep < maxSleep) sleep++;
-
-              continue POLL;
-            }
-            IO.Message reply =
-                dispatch
-                    .get(m.getTopic())
-                    .process(m)
-                    .toBuilder()
-                    .setTopic(m.getTopic())
-                    .setType(IO.MessageType.REPLY)
-                    .build();
-            send(channel, reply);
-
-            // this is a bit aggressive
-            // assume traffic up to next maxSleep
-            sleep = 0;
-          } catch (IOException e) {
-            logger.warn("error consuming", e);
-            break POLL;
+            b.consume(sem, dispatch);
+          } catch (Exception e) {
+            reconnect.add(b);
           }
-        }
-      }
-      channel.socket().close();
-      this.channel = connect(this.host, this.port);
-    }
+        });
   }
 
   @FunctionalInterface

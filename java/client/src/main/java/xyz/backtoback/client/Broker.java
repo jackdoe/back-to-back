@@ -6,7 +6,10 @@ import xyz.backtoback.proto.IO;
 
 import java.io.IOException;
 import java.nio.channels.SocketChannel;
+import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import static xyz.backtoback.client.Util.*;
@@ -64,5 +67,50 @@ class Broker {
               Producer.producePool)
           .get(timeoutMs, TimeUnit.MILLISECONDS);
     }
+  }
+
+  public void consume(Semaphore sem, Map<String, Consumer.Worker> dispatch)
+      throws InterruptedException, IOException {
+    IO.Poll poll = IO.Poll.newBuilder().addAllTopic(dispatch.keySet()).build();
+    int r = new Random(System.nanoTime()).nextInt(20);
+
+    int maxSleep = 100 - r;
+    int sleep = maxSleep;
+
+    POLL:
+    while (true) {
+      if (sleep > maxSleep / 4) Thread.sleep(maxSleep);
+
+      while (true) {
+        sem.acquire();
+        try {
+          send(channel, poll);
+          IO.Message m = receive(channel);
+          if (m.getType().getNumber() == IO.MessageType.EMPTY.getNumber()) {
+            if (sleep < maxSleep) sleep++;
+            sem.release();
+            continue POLL;
+          }
+          IO.Message reply =
+              dispatch
+                  .get(m.getTopic())
+                  .process(m)
+                  .toBuilder()
+                  .setTopic(m.getTopic())
+                  .setType(IO.MessageType.REPLY)
+                  .build();
+          send(channel, reply);
+
+          sleep = 0;
+        } catch (IOException e) {
+          logger.warn("error consuming", e);
+          sem.release();
+          break POLL;
+        } finally {
+          sem.release();
+        }
+      }
+    }
+    throw new IOException("connection issue");
   }
 }
