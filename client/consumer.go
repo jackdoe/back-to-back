@@ -2,70 +2,60 @@ package client
 
 import (
 	. "github.com/jackdoe/back-to-back/spec"
-	. "github.com/jackdoe/back-to-back/util"
 	log "github.com/sirupsen/logrus"
 	//"net"
-	"time"
 )
 
-func ConsumeConnection(addr string, topics []string, cb func(*Message) *Message) {
-	poll, _ := Pack(&Poll{Topic: topics})
-CONNECT:
+type Consumer struct {
+	reconnectPlease chan *broker
+	brokers         []*broker
+	sem             chan bool
+	dispatch        map[string]func(*Message) *Message
+}
+
+func NewConsumer(addrs []string, dispatch map[string]func(*Message) *Message) *Consumer {
+	log.Infof("connecting to %v", addrs)
+
+	c := &Consumer{
+		brokers:         []*broker{},
+		reconnectPlease: make(chan *broker, len(addrs)),
+		dispatch:        dispatch,
+		sem:             make(chan bool, len(addrs)),
+	}
+
+	for _, b := range addrs {
+		c.sem <- true
+		broker := newBroker(b)
+		c.brokers = append(c.brokers, broker)
+		go c.consume(broker)
+	}
+
+	go c.reconnector()
+
+	return c
+}
+
+func (c *Consumer) consume(b *broker) {
+	err := b.consume(c.sem, c.dispatch)
+	if err != nil {
+		log.Info("error consuming[%s]: %s", b.addr, err.Error())
+		c.reconnectPlease <- b
+	}
+
+}
+func (c *Consumer) reconnector() {
 	for {
-		maxSleep := 100
-		sleep := maxSleep
-
-		conn := Connect(addr)
-	POLL:
-		for {
-			if sleep == maxSleep {
-				<-time.After(time.Duration(sleep) * time.Millisecond)
-			}
-			// consume while messages are available
-			for {
-				_, err := conn.Write(poll)
-				if err != nil {
-					log.Warnf("error on poll addr: %s, %s", addr, err)
-					conn.Close()
-					continue CONNECT
-				}
-
-				m, err := ReceiveRequest(conn)
-				if err != nil {
-					log.Warnf("error on conn addr: %s, %s", addr, err)
-					conn.Close()
-					continue CONNECT
-				}
-
-				if m.Type == MessageType_EMPTY {
-					if sleep < maxSleep {
-						sleep++
-					}
-					continue POLL
-				}
-
-				reply := cb(m)
-
-				reply.Topic = m.Topic
-				reply.Type = MessageType_REPLY
-				//				log.Printf("sending: %s request: %s", reply, m)
-				err = Send(conn, Marshallable(reply))
-				if err != nil {
-					log.Warnf("error replying %s", err)
-					conn.Close()
-					continue CONNECT
-				}
-				sleep = 0
-			}
-		}
+		b := <-c.reconnectPlease
+		log.Infof("reconnecting %s", b.addr)
+		go func(b *broker) {
+			b.reconnect()
+			go c.consume(b)
+		}(b)
 	}
 }
 
-func Consume(addr []string, topics []string, n int, cb func(*Message) *Message) {
-	for _, a := range addr {
-		for i := 1; i < n; i++ {
-			go ConsumeConnection(a, topics, cb)
-		}
-		ConsumeConnection(a, topics, cb)
+func Consume(n int, addr []string, dispatch map[string]func(*Message) *Message) {
+	for i := 0; i < n; i++ {
+		go NewConsumer(addr, dispatch)
 	}
 }
