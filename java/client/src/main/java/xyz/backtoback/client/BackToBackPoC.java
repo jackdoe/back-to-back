@@ -30,7 +30,7 @@ public class BackToBackPoC {
 
     testPool = Executors.newFixedThreadPool(THREADS);
     producerPool = Executors.newFixedThreadPool(THREADS);
-    consumerPool = Executors.newFixedThreadPool(THREADS);
+    consumerPool = Executors.newFixedThreadPool(THREADS - 1);
 
     Map<String, Consumer.Worker> dispatch = new HashMap<>();
     dispatch.put(
