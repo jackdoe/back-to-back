@@ -29,7 +29,7 @@ func main() {
 			res, err := client.ProduceIO(conn, &Message{
 				Topic:     *ptopic,
 				Data:      []byte(*pmessage),
-				TimeoutMs: 100000,
+				TimeoutMs: 0,
 			})
 			if err != nil {
 				log.Printf("failed to produce: %s", err.Error())

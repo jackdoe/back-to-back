@@ -10,10 +10,11 @@ import (
 
 func ConsumeConnection(addr string, topics []string, cb func(*Message) *Message) {
 	poll, _ := Pack(&Poll{Topic: topics})
-	maxSleep := 100
-	sleep := maxSleep
 CONNECT:
 	for {
+		maxSleep := 100
+		sleep := maxSleep
+
 		conn := Connect(addr)
 	POLL:
 		for {

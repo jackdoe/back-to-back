@@ -11,8 +11,10 @@ import (
 
 func ProduceIO(c net.Conn, request *Message) (*Message, error) {
 	request.Type = MessageType_REQUEST
-	deadline := time.Now().Add(time.Duration(request.TimeoutMs) * time.Millisecond)
-	c.SetDeadline(deadline)
+	if request.TimeoutMs > 0 {
+		deadline := time.Now().Add(time.Duration(request.TimeoutMs) * time.Millisecond)
+		c.SetDeadline(deadline)
+	}
 	err := Send(c, Marshallable(request))
 	if err != nil {
 		return nil, err

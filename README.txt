@@ -116,7 +116,6 @@ etc.
 
 --------
 current speed:
-go consumer/producer: 200000 messages, took: 6.22s, speed: 32143.80 per second
-
+go consumer/producer: 1000000 messages, took: 16.37s, speed: 61085.33 per second
 java consumer/producer: with the java client i can do about 80k
                         requests per second on my laptop
