@@ -1,4 +1,4 @@
-
+Contrast:
 
 C1,2   - consumers (endpoint handlers, e.g. /search)
          they handle 2 endpoints, /a and /2
@@ -11,8 +11,6 @@ P1,2,3 - producers (clients, sending requests to /search)
 * multiple producers because of HA/scale
 * assume /a is 10 times slower than /b because of business logic
 
-goal: make optimal usage of resources without oversubscribing
-      and minimize the pileups of requests
 
          [/a, /b]                      [/a, /b]
        +----------+                +-----------+
@@ -43,6 +41,17 @@ goal: make optimal usage of resources without oversubscribing
  |        |                 |        |              |             |
  +--------+                 +--------+              +-------------+
 
+
+
+HTTP:
+In normal http mode B1,2 are load balancers, and they push work to C1
+and C2, and P1,2,3 are clients of the /a and /b endpoints
+(https://txt.black/~jack/we-got-it-wrong)
+
+Implementation:
+
+goal: make optimal usage of resources without oversubscribing
+      and minimize the pileups of requests
 
 
 the implementation is slow, but robust: the consumers poll the brokers
@@ -87,6 +96,27 @@ for getting the pod out of the load balancer or anything (as long as you
 pause the "get requests" polling)
 
 
+Issues:
+
+The consumers poll every 100ms, then try again to poll and if there is
+something in the queue they execute it. The problem with that is that
+if you have only 1 producer, it will wait for the reply before sending
+a new request, so the consumer will receive "EMPTY" response for the
+second poll and it will look like you can do only 1 request every 100ms
+With multiple producers and multiple consumers this is not an issue.
+
+There are many ways to solve this, such as creating second channel for
+"ping", or randomizing the poll interval and adding some decay and
+etc.
+
+
+
+
+
+
 --------
 current speed:
-2019/02/12 01:07:23 ... 200000 messages, took: 6.22s, speed: 32143.80 per second
+go consumer/producer: 200000 messages, took: 6.22s, speed: 32143.80 per second
+
+java consumer/producer: with the java client i can do about 80k
+                        requests per second on my laptop
