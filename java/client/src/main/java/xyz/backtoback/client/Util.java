@@ -52,6 +52,7 @@ public class Util {
         SocketChannel c = SocketChannel.open();
         c.connect(new InetSocketAddress(h, port));
         c.setOption(StandardSocketOptions.TCP_NODELAY, true);
+        c.setOption(StandardSocketOptions.SO_KEEPALIVE, true);
         c.finishConnect();
         return c;
       } catch (IOException e) {
