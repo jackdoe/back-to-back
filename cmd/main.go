@@ -54,7 +54,7 @@ func main() {
 		log.Infof("%s", btb.String())
 		time.Sleep(1 * time.Second)
 		i++
-		if i%10 == 0 {
+		if i%100 == 0 {
 			runtime.GC()
 			debug.FreeOSMemory()
 			log.Infof("GC")

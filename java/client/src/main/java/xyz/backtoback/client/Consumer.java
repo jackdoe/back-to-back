@@ -5,10 +5,11 @@ import org.slf4j.LoggerFactory;
 import xyz.backtoback.proto.IO;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.StandardSocketOptions;
-import java.net.UnknownHostException;
 import java.nio.channels.SocketChannel;
 import java.util.Map;
+import java.util.Random;
 
 import static xyz.backtoback.client.Util.receive;
 import static xyz.backtoback.client.Util.send;
@@ -17,16 +18,21 @@ public class Consumer {
   private static final Logger logger = LoggerFactory.getLogger(Consumer.class);
   private SocketChannel channel;
 
-  public Consumer(SocketChannel channel) throws UnknownHostException, IOException {
-    this.channel = channel;
-    channel.setOption(StandardSocketOptions.TCP_NODELAY, true);
+  public Consumer(String host, int port) throws IOException {
+    SocketChannel c = SocketChannel.open();
+    c.connect(new InetSocketAddress(host, port));
+
+    this.channel = c;
+    this.channel.setOption(StandardSocketOptions.TCP_NODELAY, true);
   }
 
   public void work(Map<String, Worker> dispatch) throws IOException, InterruptedException {
     IO.Poll poll = IO.Poll.newBuilder().addAllTopic(dispatch.keySet()).build();
+    int r = new Random(System.nanoTime()).nextInt(50);
     POLL:
     for (; ; ) {
-      Thread.sleep(100);
+      int sleep = 100 - r;
+      Thread.sleep(sleep);
       for (; ; ) {
         send(channel, poll);
         IO.Message m = receive(channel);

@@ -3,8 +3,6 @@ package xyz.backtoback.client;
 import com.google.protobuf.ByteString;
 import xyz.backtoback.proto.IO;
 
-import java.net.InetSocketAddress;
-import java.nio.channels.SocketChannel;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
@@ -12,6 +10,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class Main {
 
   public static void main(String[] args) throws Exception {
+
     for (int i = 0; i < 10; i++) {
       new Thread(
               () -> {
@@ -46,9 +45,7 @@ public class Main {
   }
 
   public static void consume() throws Exception {
-    SocketChannel sc = SocketChannel.open();
-    sc.connect(new InetSocketAddress("localhost", 9001));
-    Consumer c = new Consumer(sc);
+    Consumer c = new Consumer("localhost", 9001);
     Map<String, Consumer.Worker> dispatch = new HashMap<>();
     dispatch.put(
         "abc",
@@ -62,9 +59,7 @@ public class Main {
   }
 
   public static void produce(AtomicLong n) throws Exception {
-    SocketChannel sc = SocketChannel.open();
-    sc.connect(new InetSocketAddress("localhost", 9000));
-    Producer p = new Producer(sc);
+    Producer p = new Producer("localhost", 9000);
 
     for (; ; ) {
       IO.Message m =
