@@ -42,8 +42,11 @@ public class Producer {
     return receive(channel);
   }
 
-  public synchronized IO.Message produce(String topic, int timeoutMs, IO.Message message)
-      throws Exception {
+  public IO.Message produce(String topic, IO.Message message) throws Exception {
+    return produce(topic, 0, true, message);
+  }
+
+  public IO.Message produce(String topic, int timeoutMs, IO.Message message) throws Exception {
     return produce(topic, timeoutMs, true, message);
   }
 

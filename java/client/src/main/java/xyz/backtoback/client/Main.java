@@ -65,7 +65,7 @@ public class Main {
       IO.Message m =
           p.produce(
               "abc",
-              1000,
+              0,
               IO.Message.newBuilder()
                   .setData(ByteString.copyFrom("hello world".getBytes()))
                   .build());
