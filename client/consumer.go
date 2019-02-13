@@ -10,12 +10,16 @@ import (
 
 func ConsumeConnection(addr string, topics []string, cb func(*Message) *Message) {
 	poll, _ := Pack(&Poll{Topic: topics})
+	maxSleep := 100
+	sleep := maxSleep
 CONNECT:
 	for {
 		conn := Connect(addr)
 	POLL:
 		for {
-			<-time.After(100 * time.Millisecond)
+			if sleep == maxSleep {
+				<-time.After(time.Duration(sleep) * time.Millisecond)
+			}
 			// consume while messages are available
 			for {
 				_, err := conn.Write(poll)
@@ -33,6 +37,9 @@ CONNECT:
 				}
 
 				if m.Type == MessageType_EMPTY {
+					if sleep < maxSleep {
+						sleep++
+					}
 					continue POLL
 				}
 
@@ -47,6 +54,7 @@ CONNECT:
 					conn.Close()
 					continue CONNECT
 				}
+				sleep = 0
 			}
 		}
 	}
