@@ -85,6 +85,7 @@ public class BackToBackPoC {
                     IO.Message m =
                         producer.produce(
                             "abc",
+                            1000,
                             IO.Message.newBuilder()
                                 .setData(ByteString.copyFrom("hello world".getBytes()))
                                 .build());
@@ -121,6 +122,7 @@ public class BackToBackPoC {
               IO.Message message =
                   producer.produce(
                       "abc",
+                      1000,
                       IO.Message.newBuilder()
                           .setData(ByteString.copyFrom("hello world".getBytes()))
                           .build());
