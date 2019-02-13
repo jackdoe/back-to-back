@@ -4,7 +4,6 @@ import (
 	"flag"
 	client "github.com/jackdoe/back-to-back/client"
 	. "github.com/jackdoe/back-to-back/spec"
-	. "github.com/jackdoe/back-to-back/util"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -23,26 +22,26 @@ func main() {
 		log.Println(http.ListenAndServe("localhost:6061", nil))
 	}()
 
+	brokers := []string{}
+	for i := 0; i < *pworkers; i++ {
+		brokers = append(brokers, *pserver)
+	}
+
+	p := client.NewProducer(brokers)
+
 	work := func() {
-		conn := Connect(*pserver)
 		for i := 0; i < *pn; i++ {
-			res, err := client.ProduceIO(conn, &Message{
+			_, err := p.Request(&Message{
 				Topic:     *ptopic,
 				Data:      []byte(*pmessage),
 				TimeoutMs: 0,
 			})
 			if err != nil {
-				log.Printf("failed to produce: %s", err.Error())
-				conn.Close()
-				conn = Connect(*pserver)
-			} else if res.Type == MessageType_ERROR {
-				log.Printf("error: %s", string(res.Data))
+				log.Printf("%s", err.Error())
 			}
-
 			//			log.Printf("%s", res.String())
 		}
 
-		conn.Close()
 		done <- *pn
 	}
 
