@@ -51,7 +51,7 @@ func main() {
 
 	i := 0
 	for {
-		log.Infof("%s", btb.String())
+		btb.DumpStats()
 		time.Sleep(1 * time.Second)
 		i++
 		if i%100 == 0 {

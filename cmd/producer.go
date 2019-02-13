@@ -24,13 +24,12 @@ func main() {
 	}()
 
 	work := func() {
-		conn :=
-			Connect(*pserver)
+		conn := Connect(*pserver)
 		for i := 0; i < *pn; i++ {
 			res, err := client.ProduceIO(conn, &Message{
 				Topic:     *ptopic,
 				Data:      []byte(*pmessage),
-				TimeoutMs: 1000,
+				TimeoutMs: 100000,
 			})
 			if err != nil {
 				log.Printf("failed to produce: %s", err.Error())

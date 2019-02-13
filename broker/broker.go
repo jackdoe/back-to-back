@@ -1,7 +1,6 @@
 package broker
 
 import (
-	"fmt"
 	. "github.com/jackdoe/back-to-back/spec"
 	. "github.com/jackdoe/back-to-back/util"
 	log "github.com/sirupsen/logrus"
@@ -16,17 +15,17 @@ type MessageAndOrigin struct {
 }
 
 type Topic struct {
-	waiting  chan net.Conn
-	requests chan MessageAndOrigin
-	name     string
+	waiting       chan net.Conn
+	requests      chan MessageAndOrigin
+	name          string
+	producedCount uint64
+	consumedCount uint64
 	sync.RWMutex
 }
 
 type BackToBack struct {
-	topics        map[string]*Topic
-	producedCount uint64
-	consumedCount uint64
-	uuid          uint64
+	topics map[string]*Topic
+	uuid   uint64
 	sync.RWMutex
 }
 
@@ -70,8 +69,17 @@ func (btb *BackToBack) Listen(listener net.Listener, worker func(net.Conn)) {
 
 	listener.Close()
 }
-func (btb *BackToBack) String() string {
-	return fmt.Sprintf("producedCount: %d consumedCount: %d", btb.producedCount, btb.consumedCount)
+func (btb *BackToBack) DumpStats() {
+	producedCount := uint64(0)
+	consumedCount := uint64(0)
+	btb.RLock()
+	for name, t := range btb.topics {
+		producedCount += t.producedCount
+		consumedCount += t.consumedCount
+		log.Infof("%s: producedCount: %d consumedCount: %d", name, t.producedCount, t.consumedCount)
+	}
+	btb.RUnlock()
+	log.Infof("total: producedCount: %d consumedCount: %d", producedCount, consumedCount)
 }
 
 func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
@@ -108,7 +116,7 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 			break
 		}
 
-		atomic.AddUint64(&btb.producedCount, 1)
+		atomic.AddUint64(&topic.producedCount, 1)
 	}
 
 	c.Close()
@@ -138,7 +146,7 @@ LOOP:
 
 			select {
 			case request := <-topic.requests:
-				atomic.AddUint64(&btb.consumedCount, 1)
+				atomic.AddUint64(&topic.consumedCount, 1)
 
 				remote := request.replyChannel
 
