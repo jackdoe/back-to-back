@@ -34,7 +34,7 @@ public class Consumer {
     while (true) {
       POLL:
       while (true) {
-        if (sleep == maxSleep) Thread.sleep(sleep);
+        if (sleep > maxSleep / 4) Thread.sleep(maxSleep);
 
         while (true) {
           try {
