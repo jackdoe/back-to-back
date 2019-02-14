@@ -47,7 +47,7 @@ func (btb *BackToBack) getTopic(topic string) *Topic {
 	if !ok {
 		btb.Lock()
 		t = &Topic{
-			requests: make(chan MessageAndReply, 1000),
+			requests: make(chan MessageAndReply, 10000),
 			name:     topic,
 		}
 		btb.topics[topic] = t
@@ -94,33 +94,33 @@ func (btb *BackToBack) DumpStats() {
 	log.Infof("total: p/c: %d/%d, poll: %d", producedCount, consumedCount, btb.pollCount)
 }
 
+func waitForMessageWithTimeout(replyChannel chan *Message, topic string, id uint64, timeout <-chan time.Time) *Message {
+	for {
+		select {
+		case reply := <-replyChannel:
+			if reply.Uuid == id {
+				return reply
+			}
+		case <-timeout:
+			return &Message{Uuid: id, Topic: topic, Type: MessageType_ERROR, Data: []byte("consumer timed out")}
+		}
+	}
+}
+
+func waitForMessage(replyChannel chan *Message, id uint64) *Message {
+	for {
+		reply := <-replyChannel
+		if reply.Uuid == id {
+			return reply
+		}
+	}
+}
+
 func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 	replyChannel := make(chan *Message, 1000)
 	topics := map[string]*Topic{}
 	last_message_id := uint32(0)
 	pid := atomic.AddUint32(&btb.producerID, 1)
-
-	waitForMessageWithTimeout := func(topic string, id uint64, timeout <-chan time.Time) *Message {
-		for {
-			select {
-			case reply := <-replyChannel:
-				if reply.Uuid == id {
-					return reply
-				}
-			case <-timeout:
-				return &Message{Uuid: id, Topic: topic, Type: MessageType_ERROR, Data: []byte("consumer timed out")}
-			}
-		}
-	}
-
-	waitForMessage := func(id uint64) *Message {
-		for {
-			reply := <-replyChannel
-			if reply.Uuid == id {
-				return reply
-			}
-		}
-	}
 
 	for {
 		last_message_id++
@@ -142,16 +142,18 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 
 		if message.TimeoutAfterMs == 0 {
 			topic.requests <- MessageAndReply{message, replyChannel}
-			reply = waitForMessage(message.Uuid)
+			reply = waitForMessage(replyChannel, message.Uuid)
 		} else {
 
 			message.TimeoutAtNanosecond = uint64(time.Now().UnixNano()) + (uint64(message.TimeoutAfterMs) * uint64(1000000))
-
-			// XXX: this should also be counted in the timeout
+			// FIXME: this should also be counted in the timeout
+			// in case topic.requests is full
 			topic.requests <- MessageAndReply{message, replyChannel}
 
 			timer := time.NewTimer(time.Duration(message.TimeoutAfterMs) * time.Millisecond)
-			reply = waitForMessageWithTimeout(message.Topic, message.Uuid, timer.C)
+
+			reply = waitForMessageWithTimeout(replyChannel, message.Topic, message.Uuid, timer.C)
+
 			timer.Stop()
 
 			if reply.Type == MessageType_ERROR {
