@@ -57,7 +57,7 @@ public class Main {
           p.produce(
               "abc",
               IO.Message.newBuilder()
-                  .setTimeoutMs(0)
+                  .setTimeoutMs(10)
                   .setData(ByteString.copyFrom("hello world".getBytes()))
                   .build());
       n.getAndIncrement();

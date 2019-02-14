@@ -9,7 +9,8 @@ message Message {
         MessageType type = 2;
         bytes data = 3;
         uint64 uuid = 4;
-        uint32 timeoutMs = 6;
+        uint32 timeoutAfterMs = 6;
+        uint64 timeoutAtNanosecond = 7;
 }
 
 enum MessageType {
