@@ -42,7 +42,7 @@ func main() {
 				log.Printf("%s took: %d", err.Error(), took)
 			}
 			if took > 10 {
-				log.Printf("%s took: %d", "aa", took)
+				log.Printf("slow took: %d", took)
 			}
 			//			log.Printf("%s", res.String())
 		}
