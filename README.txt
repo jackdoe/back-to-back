@@ -109,7 +109,10 @@ There are many ways to solve this, such as creating second channel for
 "ping", or randomizing the poll interval and adding some decay and
 etc.
 
-
+At the moment for every packet we set sleep = 0; and for every EMPTY
+message we increase the sleep up to 100ms, this works quite nicely
+and is able to achive very good speeds with only 1 producer/consumer
+pair.
 
 
 
