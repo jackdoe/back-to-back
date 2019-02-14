@@ -66,9 +66,11 @@ func (btb *BackToBack) Listen(listener net.Listener, worker func(net.Conn)) {
 			log.Warnf("accept error: %s", err.Error())
 			break
 		}
+
 		if tc, ok := fd.(*net.TCPConn); ok {
 			tc.SetNoDelay(true)
 		}
+
 		go worker(fd)
 	}
 
@@ -94,15 +96,21 @@ func (btb *BackToBack) DumpStats() {
 	log.Infof("total: p/c: %d/%d, poll: %d", producedCount, consumedCount, btb.pollCount)
 }
 
-func waitForMessageWithTimeout(replyChannel chan *Message, topic string, id uint64, timeout <-chan time.Time) *Message {
+func waitForMessageWithTimeout(r MessageAndReply, mar chan MessageAndReply, replyChannel chan *Message, timeout <-chan time.Time) *Message {
+	select {
+	case mar <- r:
+	default:
+		return &Message{Uuid: r.message.Uuid, Topic: r.message.Topic, Type: MessageType_ERROR, Data: []byte("full")}
+	}
+
 	for {
 		select {
 		case reply := <-replyChannel:
-			if reply.Uuid == id {
+			if reply.Uuid == r.message.Uuid {
 				return reply
 			}
 		case <-timeout:
-			return &Message{Uuid: id, Topic: topic, Type: MessageType_ERROR, Data: []byte("consumer timed out")}
+			return &Message{Uuid: r.message.Uuid, Topic: r.message.Topic, Type: MessageType_ERROR, Data: []byte("consumer timed out")}
 		}
 	}
 }
@@ -139,20 +147,17 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 		message.Uuid = uint64(pid)<<uint64(32) | uint64(last_message_id)
 
 		var reply *Message
-
+		request := MessageAndReply{message, replyChannel}
 		if message.TimeoutAfterMs == 0 {
-			topic.requests <- MessageAndReply{message, replyChannel}
+			topic.requests <- request
 			reply = waitForMessage(replyChannel, message.Uuid)
 		} else {
 
 			message.TimeoutAtNanosecond = uint64(time.Now().UnixNano()) + (uint64(message.TimeoutAfterMs) * uint64(1000000))
-			// FIXME: this should also be counted in the timeout
-			// in case topic.requests is full
-			topic.requests <- MessageAndReply{message, replyChannel}
 
 			timer := time.NewTimer(time.Duration(message.TimeoutAfterMs) * time.Millisecond)
 
-			reply = waitForMessageWithTimeout(replyChannel, message.Topic, message.Uuid, timer.C)
+			reply = waitForMessageWithTimeout(request, topic.requests, replyChannel, timer.C)
 
 			timer.Stop()
 
@@ -172,7 +177,9 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 
 	c.Close()
 
-	// dont close it, should be collected
+	// dont close it, should be collected, otherwise we might end up writing
+	// in closed channel (panic) from the consumer if it gets delayed and replies
+	// to timed out message
 	// close(replyChannel)
 }
 
