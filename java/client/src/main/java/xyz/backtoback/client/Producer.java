@@ -58,7 +58,7 @@ public class Producer {
         brokers.add(b);
         return reply;
       } catch (Broker.BrokerErrorException e) {
-        logger.warn("failed to produce, picking another broker", e);
+        logger.warn("failed to produce, retrying", e);
         brokers.add(b);
       } catch (Exception e) {
         logger.warn("failed to produce, picking another broker", e);

@@ -52,8 +52,11 @@ PICK:
 			p.reconnectPlease <- b
 			continue PICK
 		}
-
 		p.brokers <- b
+		if reply.Type == MessageType_ERROR {
+			continue
+		}
+
 		return reply, nil
 	}
 }

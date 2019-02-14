@@ -12,7 +12,7 @@ import (
 
 type Topic struct {
 	waiting              chan net.Conn
-	requests             chan *Message
+	requests             chan MessageAndReply
 	name                 string
 	producedCount        uint64
 	consumedCount        uint64
@@ -20,9 +20,9 @@ type Topic struct {
 
 	sync.RWMutex
 }
-type Producer struct {
-	replyChannel chan *Message
-	sync.RWMutex
+type MessageAndReply struct {
+	message *Message
+	reply   chan *Message
 }
 
 type BackToBack struct {
@@ -30,14 +30,12 @@ type BackToBack struct {
 	pollCount  uint64
 	uuid       uint64
 	producerID uint32
-	producers  map[uint32]*Producer
 	sync.RWMutex
 }
 
 func NewBackToBack() *BackToBack {
 	return &BackToBack{
-		topics:    map[string]*Topic{},
-		producers: map[uint32]*Producer{},
+		topics: map[string]*Topic{},
 	}
 }
 
@@ -48,7 +46,7 @@ func (btb *BackToBack) getTopic(topic string) *Topic {
 	if !ok {
 		btb.Lock()
 		t = &Topic{
-			requests: make(chan *Message, 1000),
+			requests: make(chan MessageAndReply, 1000),
 			name:     topic,
 		}
 		btb.topics[topic] = t
@@ -89,29 +87,16 @@ func (btb *BackToBack) DumpStats() {
 }
 
 func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
-	// must have buffer of 1
-	// in case there is *no* consumer we should timeout in the client
-	// otherwise we will get unordered messages
-	// meaning that new request comes, and we consumer from the reply channel
-	// but it could contain old request that timed out
-	// also makes it easier to close the channel in case of error
-	replyChannel := make(chan *Message, 1)
+	replyChannel := make(chan *Message, 1000)
 	topics := map[string]*Topic{}
 	last_message_id := uint32(0)
 
 	pid := atomic.AddUint32(&btb.producerID, 1)
 
-	producer := &Producer{replyChannel: replyChannel}
-
-	btb.Lock()
-	btb.producers[pid] = producer
-	btb.Unlock()
-
 	waitForMessageWithTimeout := func(topic string, id uint64, timeout <-chan time.Time) *Message {
 		for {
 			select {
 			case reply := <-replyChannel:
-				//				log.Printf("received %d want %d", reply.Uuid, id)
 				if reply.Uuid == id {
 					return reply
 				}
@@ -147,14 +132,15 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 		message.Uuid = uint64(pid)<<uint64(32) | uint64(last_message_id)
 
 		var reply *Message
-		topic.requests <- message
+
+		topic.requests <- MessageAndReply{message, replyChannel}
+
 		if message.TimeoutAfterMs == 0 {
 			reply = waitForMessage(message.Uuid)
 		} else {
 			message.TimeoutAtNanosecond = uint64(time.Now().UnixNano()) + (uint64(message.TimeoutAfterMs) * uint64(1000000))
 			after := time.After(time.Duration(message.TimeoutAfterMs) * time.Millisecond)
 			reply = waitForMessageWithTimeout(message.Topic, message.Uuid, after)
-
 			if reply.Type == MessageType_ERROR {
 				atomic.AddUint64(&topic.consumedTimeoutCount, 1)
 			}
@@ -171,110 +157,85 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 
 	c.Close()
 
-	btb.Lock()
-
-	delete(btb.producers, pid)
-
-	for {
-		select {
-		case <-replyChannel:
-		default:
-		}
-	}
-
-	btb.Unlock()
-
-	producer.Lock()
-
-	close(replyChannel)
-
-	producer.Unlock()
-
+	// dont close it, should be collected
+	// close(replyChannel)
 }
 
 func (btb *BackToBack) ClientWorkerConsumer(c net.Conn) {
 	empty, _ := Pack(&Message{Type: MessageType_EMPTY})
 	topics := map[string]*Topic{}
 
-LOOP:
+POLL:
 	for {
 		poll, err := ReceivePoll(c)
 		atomic.AddUint64(&btb.pollCount, 1)
 		if err != nil {
 			log.Printf("error waiting for poll: %s", err.Error())
-			break LOOP
+			break POLL
 		}
-	PICK:
-		for _, t := range poll.Topic {
-			topic, ok := topics[t]
-			if !ok {
-				topic = btb.getTopic(t)
-				topics[t] = topic
-			}
+	AGAIN:
+		for {
+			for _, t := range poll.Topic {
+				topic, ok := topics[t]
+				if !ok {
+					topic = btb.getTopic(t)
+					topics[t] = topic
+				}
 
-			select {
-			case request := <-topic.requests:
-				atomic.AddUint64(&topic.consumedCount, 1)
+				select {
+				case r := <-topic.requests:
+					request := r.message
+					atomic.AddUint64(&topic.consumedCount, 1)
 
-				if request.TimeoutAfterMs > 0 {
-					now := uint64(time.Now().UnixNano())
-					if now > request.TimeoutAtNanosecond {
-						// assume the consumer already timed out, dont say anything
-						continue PICK
+					hasError := false
+					var reply *Message
+
+					if request.TimeoutAfterMs > 0 {
+						now := uint64(time.Now().UnixNano())
+						if now > request.TimeoutAtNanosecond {
+							continue AGAIN
+						}
 					}
-				}
 
-				err := Send(c, Marshallable(request))
-				var reply *Message
-				hasError := false
-
-				if err != nil {
-					reply = &Message{Uuid: request.Uuid, Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}
-					hasError = true
-				}
-
-				if !hasError {
-					reply, err = ReceiveRequest(c)
+					err := Send(c, Marshallable(request))
 					if err != nil {
 						reply = &Message{Uuid: request.Uuid, Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}
 						hasError = true
 					}
-				}
-				if !hasError {
-					if reply.Type != MessageType_REPLY {
-						reply = &Message{Uuid: request.Uuid, Type: MessageType_ERROR, Data: []byte("broken consumer"), Topic: t}
-						hasError = true
+
+					if !hasError {
+						reply, err = ReceiveRequest(c)
+						if err != nil {
+							reply = &Message{Uuid: request.Uuid, Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}
+							hasError = true
+						}
 					}
+					if !hasError {
+						if reply.Type != MessageType_REPLY {
+							reply = &Message{Uuid: request.Uuid, Type: MessageType_ERROR, Data: []byte("broken consumer"), Topic: t}
+							hasError = true
+						}
+					}
+
+					// we received a message, but by this time the producer could be disconnected
+					r.reply <- reply
+
+					if hasError {
+						break POLL
+					}
+
+					continue POLL
+				default:
 				}
-
-				// this is where it gets interesting
-				// we received a message, but by this time the producer could be disconnected
-
-				btb.RLock()
-				producer, ok := btb.producers[uint32(request.Uuid>>32)]
-				if !ok {
-					btb.RUnlock()
-					continue PICK
-				}
-				btb.RUnlock()
-
-				producer.RLock()
-				producer.replyChannel <- reply
-				producer.RLock()
-				if hasError {
-					break LOOP
-				}
-
-				continue LOOP
-			default:
 			}
+			break AGAIN
 		}
 
 		_, err = c.Write(empty)
 
 		if err != nil {
 			log.Warnf("failed to reply empty: %s", err.Error())
-			break LOOP
+			break POLL
 		}
 	}
 	c.Close()

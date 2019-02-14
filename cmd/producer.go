@@ -32,9 +32,9 @@ func main() {
 	work := func() {
 		for i := 0; i < *pn; i++ {
 			_, err := p.Request(&Message{
-				Topic:     *ptopic,
-				Data:      []byte(*pmessage),
-				TimeoutMs: 0,
+				Topic:          *ptopic,
+				Data:           []byte(*pmessage),
+				TimeoutAfterMs: 0,
 			})
 			if err != nil {
 				log.Printf("%s", err.Error())

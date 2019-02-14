@@ -20,15 +20,16 @@ public class Main {
               .setData(ByteString.copyFrom("hello from consumer".getBytes()))
               .build();
         });
+    int thr = 10;
     List<String> addrs = new ArrayList<>();
-    for (int i = 0; i < 9; i++) addrs.add("localhost:9001");
+    for (int i = 0; i < thr - 1; i++) addrs.add("localhost:9001");
 
     Consumer c = new Consumer(addrs, dispatch);
 
     final AtomicLong n = new AtomicLong(0);
 
     List<String> brokers = new ArrayList<>();
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < thr; i++) {
       brokers.add("localhost:9000");
     }
     Producer p = new Producer(brokers);
@@ -57,7 +58,7 @@ public class Main {
           p.produce(
               "abc",
               IO.Message.newBuilder()
-                  .setTimeoutMs(10)
+                  .setTimeoutMs(1000)
                   .setData(ByteString.copyFrom("hello world".getBytes()))
                   .build());
       n.getAndIncrement();
