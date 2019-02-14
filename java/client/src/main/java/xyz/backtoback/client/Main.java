@@ -39,7 +39,7 @@ public class Main {
                 try {
                   produce(p, n);
                 } catch (Exception e) {
-                  throw new RuntimeException(e);
+                  e.printStackTrace();
                 }
               })
           .start();
@@ -54,13 +54,17 @@ public class Main {
 
   public static void produce(Producer p, AtomicLong n) throws Exception {
     for (; ; ) {
-      IO.Message m =
-          p.produce(
-              "abc",
-              IO.Message.newBuilder()
-                  .setTimeoutMs(1000)
-                  .setData(ByteString.copyFrom("hello world".getBytes()))
-                  .build());
+      try {
+        IO.Message m =
+            p.produce(
+                "abc",
+                IO.Message.newBuilder()
+                    .setTimeoutMs(1000)
+                    .setData(ByteString.copyFrom("hello world".getBytes()))
+                    .build());
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
       n.getAndIncrement();
     }
   }

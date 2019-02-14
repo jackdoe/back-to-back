@@ -140,12 +140,16 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 
 		var reply *Message
 
-		topic.requests <- MessageAndReply{message, replyChannel}
-
 		if message.TimeoutAfterMs == 0 {
+			topic.requests <- MessageAndReply{message, replyChannel}
 			reply = waitForMessage(message.Uuid)
 		} else {
+
 			message.TimeoutAtNanosecond = uint64(time.Now().UnixNano()) + (uint64(message.TimeoutAfterMs) * uint64(1000000))
+
+			// XXX: this should also be counted in the timeout
+			topic.requests <- MessageAndReply{message, replyChannel}
+
 			timer := time.NewTimer(time.Duration(message.TimeoutAfterMs) * time.Millisecond)
 			reply = waitForMessageWithTimeout(message.Topic, message.Uuid, timer.C)
 			timer.Stop()

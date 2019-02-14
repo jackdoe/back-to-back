@@ -18,12 +18,6 @@ class Broker {
   private int port;
   private SocketChannel channel;
 
-  public static class BrokerErrorException extends RuntimeException {
-    BrokerErrorException(String s) {
-      super(s);
-    }
-  }
-
   public Broker(String addr, int port) {
     this.addr = addr;
     this.port = port;
@@ -128,7 +122,6 @@ class Broker {
           sleep = 0;
         } catch (IOException e) {
           logger.warn("error consuming", e);
-          sem.release();
           break POLL;
         } finally {
           sem.release();
@@ -136,5 +129,11 @@ class Broker {
       }
     }
     throw new IOException("connection issue");
+  }
+
+  public static class BrokerErrorException extends RuntimeException {
+    BrokerErrorException(String s) {
+      super(s);
+    }
   }
 }
