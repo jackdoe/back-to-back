@@ -11,12 +11,13 @@ import (
 )
 
 type Topic struct {
-	waiting              chan net.Conn
-	requests             chan MessageAndReply
-	name                 string
-	producedCount        uint64
-	consumedCount        uint64
-	consumedTimeoutCount uint64
+	waiting                 chan net.Conn
+	requests                chan MessageAndReply
+	name                    string
+	producedCount           uint64
+	consumedCount           uint64
+	consumedTimeoutCount    uint64
+	consumedConnectionError uint64
 
 	sync.RWMutex
 }
@@ -80,17 +81,23 @@ func (btb *BackToBack) DumpStats() {
 	for name, t := range btb.topics {
 		producedCount += t.producedCount
 		consumedCount += t.consumedCount
-		log.Infof("%s: producedCount: %d consumedCount: %d, consumer timeout: %d, queue len: %d", name, t.producedCount, t.consumedCount, t.consumedTimeoutCount, len(t.requests))
+		log.Infof("%s: p/c: %d/%d, consumer [ timeout/err: %d/%d ], queue len: %d",
+			name,
+			t.producedCount,
+			t.consumedCount,
+			t.consumedTimeoutCount,
+			t.consumedConnectionError,
+			len(t.requests))
 	}
 	btb.RUnlock()
-	log.Infof("total: producedCount: %d consumedCount: %d, pollCount: %d", producedCount, consumedCount, btb.pollCount)
+
+	log.Infof("total: p/c: %d/%d, poll: %d", producedCount, consumedCount, btb.pollCount)
 }
 
 func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 	replyChannel := make(chan *Message, 1000)
 	topics := map[string]*Topic{}
 	last_message_id := uint32(0)
-
 	pid := atomic.AddUint32(&btb.producerID, 1)
 
 	waitForMessageWithTimeout := func(topic string, id uint64, timeout <-chan time.Time) *Message {
@@ -139,8 +146,10 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 			reply = waitForMessage(message.Uuid)
 		} else {
 			message.TimeoutAtNanosecond = uint64(time.Now().UnixNano()) + (uint64(message.TimeoutAfterMs) * uint64(1000000))
-			after := time.After(time.Duration(message.TimeoutAfterMs) * time.Millisecond)
-			reply = waitForMessageWithTimeout(message.Topic, message.Uuid, after)
+			timer := time.NewTimer(time.Duration(message.TimeoutAfterMs) * time.Millisecond)
+			reply = waitForMessageWithTimeout(message.Topic, message.Uuid, timer.C)
+			timer.Stop()
+
 			if reply.Type == MessageType_ERROR {
 				atomic.AddUint64(&topic.consumedTimeoutCount, 1)
 			}
@@ -221,6 +230,7 @@ POLL:
 					r.reply <- reply
 
 					if hasError {
+						atomic.AddUint64(&topic.consumedConnectionError, 1)
 						break POLL
 					}
 

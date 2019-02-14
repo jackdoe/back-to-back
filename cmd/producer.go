@@ -31,13 +31,18 @@ func main() {
 
 	work := func() {
 		for i := 0; i < *pn; i++ {
+			t0 := time.Now().UnixNano()
 			_, err := p.Request(&Message{
 				Topic:          *ptopic,
 				Data:           []byte(*pmessage),
-				TimeoutAfterMs: 0,
+				TimeoutAfterMs: 10000,
 			})
+			took := (time.Now().UnixNano() - t0) / 1000000
 			if err != nil {
-				log.Printf("%s", err.Error())
+				log.Printf("%s took: %d", err.Error(), took)
+			}
+			if took > 10 {
+				log.Printf("%s took: %d", "aa", took)
 			}
 			//			log.Printf("%s", res.String())
 		}

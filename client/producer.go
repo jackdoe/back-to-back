@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	. "github.com/jackdoe/back-to-back/spec"
 	log "github.com/sirupsen/logrus"
 	"math/rand"
@@ -54,7 +55,7 @@ PICK:
 		}
 		p.brokers <- b
 		if reply.Type == MessageType_ERROR {
-			continue
+			return nil, errors.New(string(reply.Data))
 		}
 
 		return reply, nil
