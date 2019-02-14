@@ -57,6 +57,9 @@ public class Producer {
         IO.Message reply = b.produce(topic, message.getTimeoutMs(), message);
         brokers.add(b);
         return reply;
+      } catch (Broker.BrokerErrorException e) {
+        logger.warn("failed to produce, picking another broker", e);
+        brokers.add(b);
       } catch (Exception e) {
         logger.warn("failed to produce, picking another broker", e);
         reconnect.add(b);

@@ -8,9 +8,7 @@ import java.io.IOException;
 import java.nio.channels.SocketChannel;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static xyz.backtoback.client.Util.*;
 
@@ -19,6 +17,12 @@ class Broker {
   private String addr;
   private int port;
   private SocketChannel channel;
+
+  public static class BrokerErrorException extends RuntimeException {
+    BrokerErrorException(String s) {
+      super(s);
+    }
+  }
 
   public Broker(String addr, int port) {
     this.addr = addr;
@@ -41,7 +45,8 @@ class Broker {
     return String.format("%s:%d", addr, port);
   }
 
-  private IO.Message io(String topic, int timeoutMs, IO.Message message) throws IOException {
+  private IO.Message io(String topic, int timeoutMs, IO.Message message)
+      throws IOException, BrokerErrorException {
     send(
         channel,
         message
@@ -50,23 +55,40 @@ class Broker {
             .setTopic(topic)
             .setTimeoutMs(timeoutMs)
             .build());
-    return receive(channel);
+    IO.Message m = receive(channel);
+    if (m.getType().getNumber() == IO.MessageType.ERROR.getNumber()) {
+      throw new BrokerErrorException(m.getData().toStringUtf8());
+    }
+    return m;
   }
 
-  public IO.Message produce(String topic, int timeoutMs, IO.Message message) throws Exception {
-    while (true) {
-      if (timeoutMs == 0) return io(topic, timeoutMs, message);
+  public IO.Message produce(String topic, int timeoutMs, IO.Message message)
+      throws InterruptedException, ExecutionException, TimeoutException, IOException,
+          BrokerErrorException {
+    if (timeoutMs == 0) return io(topic, timeoutMs, message);
 
+    try {
+      // assume the broker will notify us on timeout, so we expect the ERROR message
       return CompletableFuture.supplyAsync(
               () -> {
                 try {
                   return io(topic, timeoutMs, message);
+                } catch (BrokerErrorException e) {
+                  throw e;
                 } catch (Exception e) {
                   throw new RuntimeException(e);
                 }
               },
               Producer.producePool)
-          .get(timeoutMs, TimeUnit.MILLISECONDS);
+          .get(timeoutMs + 1000, TimeUnit.MILLISECONDS);
+    } catch (ExecutionException e) {
+      Throwable clause = e.getCause();
+      if (clause != null) {
+        if (clause instanceof BrokerErrorException) {
+          throw (BrokerErrorException) clause;
+        }
+      }
+      throw e;
     }
   }
 
@@ -98,6 +120,7 @@ class Broker {
                   .process(m)
                   .toBuilder()
                   .setTopic(m.getTopic())
+                  .setUuid(m.getUuid())
                   .setType(IO.MessageType.REPLY)
                   .build();
           send(channel, reply);
