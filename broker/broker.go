@@ -96,11 +96,15 @@ func (btb *BackToBack) DumpStats() {
 	log.Infof("total: p/c: %d/%d, poll: %d", producedCount, consumedCount, btb.pollCount)
 }
 
+func makeError(m *Message, e string) *Message {
+	return &Message{Uuid: m.Uuid, Topic: m.Topic, Type: MessageType_ERROR, Data: []byte(e)}
+}
+
 func waitForMessageWithTimeout(r MessageAndReply, mar chan MessageAndReply, replyChannel chan *Message, timeout <-chan time.Time) *Message {
 	select {
 	case mar <- r:
 	default:
-		return &Message{Uuid: r.message.Uuid, Topic: r.message.Topic, Type: MessageType_ERROR, Data: []byte("full")}
+		return makeError(r.message, "full")
 	}
 
 	for {
@@ -110,7 +114,7 @@ func waitForMessageWithTimeout(r MessageAndReply, mar chan MessageAndReply, repl
 				return reply
 			}
 		case <-timeout:
-			return &Message{Uuid: r.message.Uuid, Topic: r.message.Topic, Type: MessageType_ERROR, Data: []byte("consumer timed out")}
+			return makeError(r.message, "consumer timed out")
 		}
 	}
 }
@@ -152,7 +156,6 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 			topic.requests <- request
 			reply = waitForMessage(replyChannel, message.Uuid)
 		} else {
-
 			message.TimeoutAtNanosecond = uint64(time.Now().UnixNano()) + (uint64(message.TimeoutAfterMs) * uint64(1000000))
 
 			timer := time.NewTimer(time.Duration(message.TimeoutAfterMs) * time.Millisecond)
@@ -221,20 +224,20 @@ POLL:
 
 					err := Send(c, Marshallable(request))
 					if err != nil {
-						reply = &Message{Uuid: request.Uuid, Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}
+						reply = makeError(request, err.Error())
 						hasError = true
 					}
 
 					if !hasError {
 						reply, err = ReceiveRequest(c)
 						if err != nil {
-							reply = &Message{Uuid: request.Uuid, Type: MessageType_ERROR, Data: []byte(err.Error()), Topic: t}
+							reply = makeError(request, err.Error())
 							hasError = true
 						}
 					}
 					if !hasError {
 						if reply.Type != MessageType_REPLY {
-							reply = &Message{Uuid: request.Uuid, Type: MessageType_ERROR, Data: []byte("broken consumer"), Topic: t}
+							reply = makeError(request, "broken consumer")
 							hasError = true
 						}
 					}
