@@ -18,6 +18,7 @@ type Topic struct {
 	consumedCount           uint64
 	consumedTimeoutCount    uint64
 	consumedConnectionError uint64
+	consumedRetries         uint64
 
 	sync.RWMutex
 }
@@ -83,12 +84,13 @@ func (btb *BackToBack) DumpStats() {
 	for name, t := range btb.topics {
 		producedCount += t.producedCount
 		consumedCount += t.consumedCount
-		log.Infof("%s: p/c: %d/%d, consumer [ timeout/err: %d/%d ], queue len: %d",
+		log.Infof("%s: p/c: %d/%d, consumer [ timeout/err/retries: %d/%d/%d ], queue len: %d",
 			name,
 			t.producedCount,
 			t.consumedCount,
 			t.consumedTimeoutCount,
 			t.consumedConnectionError,
+			t.consumedRetries,
 			len(t.requests))
 	}
 	btb.RUnlock()
@@ -129,7 +131,7 @@ func waitForMessage(replyChannel chan *Message, id uint64) *Message {
 }
 
 func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
-	replyChannel := make(chan *Message, 1000)
+	replyChannel := make(chan *Message, 10000)
 	topics := map[string]*Topic{}
 	last_message_id := uint32(0)
 	pid := atomic.AddUint32(&btb.producerID, 1)
@@ -230,11 +232,13 @@ POLL:
 
 					if !hasError {
 						reply, err = ReceiveRequest(c)
+
 						if err != nil {
 							reply = makeError(request, MessageType_ERROR_CONSUMER_RECEIVE, err.Error())
 							hasError = true
 						}
 					}
+
 					if !hasError {
 						if reply.Type != MessageType_REPLY {
 							reply = makeError(request, MessageType_ERROR_CONSUMER_BROKEN, "broken consumer")
@@ -242,14 +246,25 @@ POLL:
 						}
 					}
 
-					// we received a message, but by this time the producer could be disconnected
-					r.reply <- reply
-
 					if hasError {
 						atomic.AddUint64(&topic.consumedConnectionError, 1)
-						break POLL
-					}
+						now := uint64(time.Now().UnixNano())
 
+						if request.RetryTTL > 0 && (request.TimeoutAtNanosecond == 0 || now < request.TimeoutAtNanosecond) {
+							atomic.AddUint64(&topic.consumedRetries, 1)
+
+							request.RetryTTL--
+							topic.requests <- r
+						} else {
+							reply.RetryTTL = request.RetryTTL
+							r.reply <- reply
+						}
+
+						break POLL
+					} else {
+						reply.RetryTTL = request.RetryTTL
+						r.reply <- reply
+					}
 					continue POLL
 				default:
 				}

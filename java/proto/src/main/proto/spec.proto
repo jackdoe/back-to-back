@@ -11,6 +11,7 @@ message Message {
         uint64 uuid = 4;
         uint32 timeoutAfterMs = 6;
         uint64 timeoutAtNanosecond = 7;
+        uint32 retryTTL = 8;
 }
 
 enum MessageType {
@@ -24,6 +25,8 @@ enum MessageType {
      ERROR_CONSUMER_SEND = 7;
      ERROR_CONSUMER_RECEIVE = 8;
      ERROR_CONSUMER_BROKEN = 9;
+     PUBLISH = 10;
+     PUBLISH_ACK = 11;
 }
 
 message Poll {

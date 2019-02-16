@@ -34,11 +34,16 @@ func NewConsumer(addrs []string, dispatch map[string]func(*Message) *Message) *C
 
 	return c
 }
+func (c *Consumer) Close() {
+	for _, b := range c.brokers {
+		b.close()
+	}
+}
 
 func (c *Consumer) consume(b *broker) {
 	err := b.consume(c.sem, c.dispatch) // has to exit in order to be reconnected
 	if err != nil {
-		log.Info("error consuming[%s]: %s", b.addr, err.Error())
+		log.Infof("error consuming[%s]: %s", b.addr, err.Error())
 		c.reconnectPlease <- b
 	}
 
@@ -51,11 +56,5 @@ func (c *Consumer) reconnector() {
 			b.reconnect()
 			go c.consume(b)
 		}(b)
-	}
-}
-
-func Consume(n int, addr []string, dispatch map[string]func(*Message) *Message) {
-	for i := 0; i < n; i++ {
-		go NewConsumer(addr, dispatch)
 	}
 }

@@ -26,6 +26,19 @@ func TestIntegration(t *testing.T) {
 	go btb.Listen(sockConsumer, btb.ClientWorkerConsumer)
 	go btb.Listen(sockProducer, btb.ClientWorkerProducer)
 
+	producer := client.NewProducer([]string{producerAddr, producerAddr})
+
+	testRetries(t, consumerAddr, producer)
+	testMultipleTopics(t, consumerAddr, producer)
+	testTimeouts(t, consumerAddr, producer)
+
+	btb.DumpStats()
+
+	sockConsumer.Close()
+	sockProducer.Close()
+}
+
+func testMultipleTopics(t *testing.T, consumerAddr string, producer *client.Producer) {
 	acount := uint64(0)
 	bcount := uint64(0)
 
@@ -61,11 +74,10 @@ func TestIntegration(t *testing.T) {
 		}
 	}
 
-	go client.Consume(10, []string{consumerAddr, consumerAddr}, dispatch)
+	consumerA := client.NewConsumer([]string{consumerAddr, consumerAddr}, dispatch)
 
-	producer := client.NewProducer([]string{producerAddr, producerAddr})
 	count := uint64(10000)
-	// first test with timeout
+	// first test multiple topics with timeout
 	for i := uint64(0); i < count; i++ {
 		topic := "a"
 		if i&1 == 0 {
@@ -96,7 +108,7 @@ func TestIntegration(t *testing.T) {
 	acount = 0
 	bcount = 0
 
-	// first test with timeout
+	// first test multiple topics
 	for i := uint64(0); i < count; i++ {
 		topic := "a"
 		if i&1 == 0 {
@@ -124,6 +136,22 @@ func TestIntegration(t *testing.T) {
 		t.Fatalf("bcount = %d", acount)
 	}
 
+	consumerA.Close()
+}
+func testTimeouts(t *testing.T, consumerAddr string, producer *client.Producer) {
+	dispatch := map[string]func(*Message) *Message{}
+	dispatch["c"] = func(m *Message) *Message {
+		if string(m.Data) == "pause" {
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		return &Message{
+			Data: []byte("c"),
+		}
+	}
+
+	consumerA := client.NewConsumer([]string{consumerAddr, consumerAddr}, dispatch)
+
 	errors := 0
 	attempts := 100
 	// first test with timeout
@@ -139,6 +167,7 @@ func TestIntegration(t *testing.T) {
 			Data:           data,
 			TimeoutAfterMs: 120,
 		})
+
 		if err != nil {
 			if err.Error() != "ERROR_CONSUMER_TIMEOUT" {
 				t.Fatalf("%s", err.Error())
@@ -149,14 +178,60 @@ func TestIntegration(t *testing.T) {
 				t.Fatalf("expected %s got %s", topic, string(reply.Data))
 			}
 		}
-
 	}
+
 	if errors != attempts/2 {
 		t.Fatalf("expected %d errors got %d", attempts/2, errors)
 	}
 
-	btb.DumpStats()
+	consumerA.Close()
+}
 
-	sockConsumer.Close()
-	sockProducer.Close()
+func testRetries(t *testing.T, consumerAddr string, producer *client.Producer) {
+
+	topic := "retry"
+
+	dispatchSleeping := map[string]func(*Message) *Message{}
+	consumerA := client.NewConsumer([]string{consumerAddr, consumerAddr}, dispatchSleeping)
+	dispatchSleeping[topic] = func(m *Message) *Message {
+		consumerA.Close()
+		return &Message{
+			Data: []byte("c"),
+		}
+	}
+
+	dispatchWorking := map[string]func(*Message) *Message{}
+	dispatchWorking[topic] = func(m *Message) *Message {
+		return &Message{
+			Data: []byte("c"),
+		}
+	}
+
+	consumerB := client.NewConsumer([]string{consumerAddr, consumerAddr}, dispatchWorking)
+	attempts := 10000
+	// at least 1 error
+	retries := 0
+	for i := 0; i < attempts; i++ {
+
+		data := []byte("pause")
+		reply, err := producer.Request(&Message{
+			Topic:          topic,
+			Data:           data,
+			TimeoutAfterMs: 0,
+			RetryTTL:       10,
+		})
+		if reply.RetryTTL != 10 {
+			retries++
+		}
+
+		if err != nil {
+			t.Fatalf("%s", err.Error())
+		}
+	}
+
+	if retries == 0 {
+		t.Fatalf("expected to fail at least once got %d", retries)
+	}
+	consumerA.Close()
+	consumerB.Close()
 }

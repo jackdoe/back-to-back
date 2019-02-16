@@ -34,7 +34,11 @@ func main() {
 		}
 	}
 
-	client.Consume(*pworkers, []string{*pserver, *pserver}, dispatch)
+	addrs := []string{}
+	for i := 0; i < *pworkers; i++ {
+		addrs = append(addrs, *pserver)
+	}
+	client.NewConsumer(addrs, dispatch)
 
 	for {
 		log.Printf("received so far: %d", i)

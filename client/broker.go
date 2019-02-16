@@ -18,6 +18,10 @@ func newBroker(addr string) *broker {
 		c:    Connect(addr),
 	}
 }
+func (b *broker) close() {
+	b.c.Close()
+}
+
 func (b *broker) consume(sem chan bool, dispatch map[string]func(*Message) *Message) error {
 	topics := []string{}
 	for k, _ := range dispatch {
@@ -72,7 +76,10 @@ POLL:
 			sleep = 0
 		}
 	}
+
+	return nil
 }
+
 func (b *broker) produceIO(request *Message) (*Message, error) {
 	request.Type = MessageType_REQUEST
 	if request.TimeoutAfterMs > 0 {
