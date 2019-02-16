@@ -140,7 +140,7 @@ func TestIntegration(t *testing.T) {
 			TimeoutAfterMs: 120,
 		})
 		if err != nil {
-			if err.Error() != "consumer timed out" {
+			if err.Error() != "ERROR_CONSUMER_TIMEOUT" {
 				t.Fatalf("%s", err.Error())
 			}
 			errors++

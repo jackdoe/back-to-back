@@ -19,6 +19,11 @@ enum MessageType {
      ERROR = 2;
      EMPTY = 3;
      REQUEST = 4;
+     ERROR_BROKER_FULL = 5;
+     ERROR_CONSUMER_TIMEOUT = 6;
+     ERROR_CONSUMER_SEND = 7;
+     ERROR_CONSUMER_RECEIVE = 8;
+     ERROR_CONSUMER_BROKEN = 9;
 }
 
 message Poll {

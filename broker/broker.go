@@ -96,15 +96,15 @@ func (btb *BackToBack) DumpStats() {
 	log.Infof("total: p/c: %d/%d, poll: %d", producedCount, consumedCount, btb.pollCount)
 }
 
-func makeError(m *Message, e string) *Message {
-	return &Message{Uuid: m.Uuid, Topic: m.Topic, Type: MessageType_ERROR, Data: []byte(e)}
+func makeError(m *Message, errorType MessageType, e string) *Message {
+	return &Message{Uuid: m.Uuid, Topic: m.Topic, Type: errorType, Data: []byte(e)}
 }
 
 func waitForMessageWithTimeout(r MessageAndReply, mar chan MessageAndReply, replyChannel chan *Message, timeout <-chan time.Time) *Message {
 	select {
 	case mar <- r:
 	default:
-		return makeError(r.message, "full")
+		return makeError(r.message, MessageType_ERROR_BROKER_FULL, "full")
 	}
 
 	for {
@@ -114,7 +114,7 @@ func waitForMessageWithTimeout(r MessageAndReply, mar chan MessageAndReply, repl
 				return reply
 			}
 		case <-timeout:
-			return makeError(r.message, "consumer timed out")
+			return makeError(r.message, MessageType_ERROR_CONSUMER_TIMEOUT, "consumer timed out")
 		}
 	}
 }
@@ -224,20 +224,20 @@ POLL:
 
 					err := Send(c, Marshallable(request))
 					if err != nil {
-						reply = makeError(request, err.Error())
+						reply = makeError(request, MessageType_ERROR_CONSUMER_SEND, err.Error())
 						hasError = true
 					}
 
 					if !hasError {
 						reply, err = ReceiveRequest(c)
 						if err != nil {
-							reply = makeError(request, err.Error())
+							reply = makeError(request, MessageType_ERROR_CONSUMER_RECEIVE, err.Error())
 							hasError = true
 						}
 					}
 					if !hasError {
 						if reply.Type != MessageType_REPLY {
-							reply = makeError(request, "broken consumer")
+							reply = makeError(request, MessageType_ERROR_CONSUMER_BROKEN, "broken consumer")
 							hasError = true
 						}
 					}

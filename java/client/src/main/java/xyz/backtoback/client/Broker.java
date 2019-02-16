@@ -47,11 +47,11 @@ class Broker {
             .toBuilder()
             .setType(IO.MessageType.REQUEST)
             .setTopic(topic)
-            .setTimeoutMs(timeoutMs)
+            .setTimeoutAfterMs(timeoutMs)
             .build());
     IO.Message m = receive(channel);
-    if (m.getType().getNumber() == IO.MessageType.ERROR.getNumber()) {
-      throw new BrokerErrorException(m.getData().toStringUtf8());
+    if (m.getType().getNumber() != IO.MessageType.REPLY.getNumber()) {
+      throw new BrokerErrorException(m.getType().toString());
     }
     return m;
   }

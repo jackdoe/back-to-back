@@ -59,7 +59,7 @@ public class Main {
             p.produce(
                 "abc",
                 IO.Message.newBuilder()
-                    .setTimeoutMs(1000)
+                    .setTimeoutAfterMs(1000)
                     .setData(ByteString.copyFrom("hello world".getBytes()))
                     .build());
       } catch (Exception e) {

@@ -54,8 +54,8 @@ PICK:
 			continue PICK
 		}
 		p.brokers <- b
-		if reply.Type == MessageType_ERROR {
-			return nil, errors.New(string(reply.Data))
+		if reply.Type != MessageType_REPLY {
+			return nil, errors.New(reply.Type.String())
 		}
 
 		return reply, nil

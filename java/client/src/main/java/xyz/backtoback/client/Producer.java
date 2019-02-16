@@ -54,7 +54,7 @@ public class Producer {
     while (true) {
       Broker b = brokers.take();
       try {
-        IO.Message reply = b.produce(topic, message.getTimeoutMs(), message);
+        IO.Message reply = b.produce(topic, message.getTimeoutAfterMs(), message);
         brokers.add(b);
         return reply;
       } catch (Broker.BrokerErrorException e) {
