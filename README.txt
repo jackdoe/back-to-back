@@ -44,11 +44,11 @@ P1,2,3 - producers (clients, sending requests to /search)
 
 
 HTTP:
-In normal http mode B1,2 are load balancers, and they push work to C1
+In normal http world B1,2 are load balancers, and they push work to C1
 and C2, and P1,2,3 are clients of the /a and /b endpoints
 (https://txt.black/~jack/we-got-it-wrong)
 
-Implementation:
+Implementation with queues:
 
 goal: make optimal usage of resources without oversubscribing
       and minimize the pileups of requests

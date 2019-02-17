@@ -64,7 +64,9 @@ POLL:
 			reply := cb(m)
 
 			reply.Topic = m.Topic
-			reply.Type = MessageType_REPLY
+			if reply.Type == MessageType_UNKNOWN {
+				reply.Type = MessageType_REPLY
+			}
 			reply.Uuid = m.Uuid
 			err = Send(b.c, Marshallable(reply))
 			if err != nil {

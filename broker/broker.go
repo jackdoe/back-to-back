@@ -239,13 +239,6 @@ POLL:
 						}
 					}
 
-					if !hasError {
-						if reply.Type != MessageType_REPLY {
-							reply = makeError(request, MessageType_ERROR_CONSUMER_BROKEN, "broken consumer")
-							hasError = true
-						}
-					}
-
 					if hasError {
 						atomic.AddUint64(&topic.consumedConnectionError, 1)
 						now := uint64(time.Now().UnixNano())

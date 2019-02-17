@@ -2,6 +2,7 @@ package client
 
 import (
 	"errors"
+	"fmt"
 	. "github.com/jackdoe/back-to-back/spec"
 	log "github.com/sirupsen/logrus"
 	"math/rand"
@@ -55,7 +56,7 @@ PICK:
 		}
 		p.brokers <- b
 		if reply.Type != MessageType_REPLY {
-			return nil, errors.New(reply.Type.String())
+			return nil, errors.New(fmt.Sprintf("%s: %s", reply.Type, string(reply.Data)))
 		}
 
 		return reply, nil

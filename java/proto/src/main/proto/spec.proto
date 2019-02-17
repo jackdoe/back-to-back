@@ -12,6 +12,7 @@ message Message {
         uint32 timeoutAfterMs = 6;
         uint64 timeoutAtNanosecond = 7;
         uint32 retryTTL = 8;
+        map<string,string> header = 9;
 }
 
 enum MessageType {

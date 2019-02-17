@@ -169,7 +169,7 @@ func testTimeouts(t *testing.T, consumerAddr string, producer *client.Producer) 
 		})
 
 		if err != nil {
-			if err.Error() != "ERROR_CONSUMER_TIMEOUT" {
+			if err.Error() != "ERROR_CONSUMER_TIMEOUT: consumer timed out" {
 				t.Fatalf("%s", err.Error())
 			}
 			errors++
