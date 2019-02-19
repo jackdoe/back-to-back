@@ -28,10 +28,12 @@ type MessageAndReply struct {
 }
 
 type BackToBack struct {
-	topics     map[string]*Topic
-	pollCount  uint64
-	uuid       uint64
-	producerID uint32
+	topics              map[string]*Topic
+	pollCount           uint64
+	activeConsumerCount int64
+	activeProducerCount int64
+	uuid                uint64
+	producerID          uint32
 	sync.RWMutex
 }
 
@@ -95,7 +97,7 @@ func (btb *BackToBack) DumpStats() {
 	}
 	btb.RUnlock()
 
-	log.Infof("total: p/c: %d/%d, poll: %d", producedCount, consumedCount, btb.pollCount)
+	log.Infof("total: p/c: %d/%d, poll: %d, consumer conn: %d, producer conn: %d", producedCount, consumedCount, btb.pollCount, btb.activeConsumerCount, btb.activeProducerCount)
 }
 
 func makeError(m *Message, errorType MessageType, e string) *Message {
@@ -131,6 +133,7 @@ func waitForMessage(replyChannel chan *Message, id uint64) *Message {
 }
 
 func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
+	atomic.AddInt64(&btb.activeProducerCount, 1)
 	replyChannel := make(chan *Message, 10000)
 	topics := map[string]*Topic{}
 	last_message_id := uint32(0)
@@ -181,7 +184,7 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 	}
 
 	c.Close()
-
+	atomic.AddInt64(&btb.activeProducerCount, -1)
 	// dont close it, should be collected, otherwise we might end up writing
 	// in closed channel (panic) from the consumer if it gets delayed and replies
 	// to timed out message
@@ -189,6 +192,7 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 }
 
 func (btb *BackToBack) ClientWorkerConsumer(c net.Conn) {
+	atomic.AddInt64(&btb.activeConsumerCount, 1)
 	empty, _ := Pack(&Message{Type: MessageType_EMPTY})
 	topics := map[string]*Topic{}
 
@@ -273,4 +277,5 @@ POLL:
 		}
 	}
 	c.Close()
+	atomic.AddInt64(&btb.activeConsumerCount, -1)
 }
