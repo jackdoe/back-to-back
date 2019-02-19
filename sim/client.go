@@ -14,7 +14,7 @@ import (
 )
 
 func getHist() *ghistogram.Histogram {
-	return ghistogram.NewHistogram(10, 10, 2.0)
+	return ghistogram.NewHistogram(10, 10, 1.5)
 }
 func main() {
 	var pserver = flag.String("server", "127.0.0.1:9000", "connect to addr")
