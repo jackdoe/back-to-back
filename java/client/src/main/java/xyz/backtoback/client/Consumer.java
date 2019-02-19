@@ -26,10 +26,12 @@ public class Consumer {
     sem = new Semaphore(n);
 
     reconnect = new ArrayBlockingQueue<>(addrs.size());
-    for (String addr : addrs) {
-      HostAndPort hp = HostAndPort.fromString(addr);
-      Broker b = new Broker(hp.getHost(), hp.getPort());
-      start(b, dispatch);
+    for (int i = 0; i < n; i++) {
+      for (String addr : addrs) {
+        HostAndPort hp = HostAndPort.fromString(addr);
+        Broker b = new Broker(hp.getHost(), hp.getPort());
+        start(b, dispatch);
+      }
     }
 
     reconnector =
