@@ -6,6 +6,7 @@ import (
 	"github.com/couchbaselabs/ghistogram"
 	client "github.com/jackdoe/back-to-back/client"
 	. "github.com/jackdoe/back-to-back/spec"
+	"io/ioutil"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -57,10 +58,16 @@ func main() {
 
 		for i := 0; i < *pn; i++ {
 			t0 := time.Now().UnixNano()
-			_, err := http.Get(*pserverHttp)
+			resp, err := http.Get(*pserverHttp)
 			if err != nil {
 				panic(err)
 			}
+			defer resp.Body.Close()
+			_, err = ioutil.ReadAll(resp.Body)
+			if err != nil {
+				panic(err)
+			}
+
 			took := (time.Now().UnixNano() - t0) / 1000000
 			hist.Add(uint64(took), 1)
 		}

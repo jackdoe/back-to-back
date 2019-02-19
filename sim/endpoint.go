@@ -1,19 +1,28 @@
 package main
 
 import (
+	"crypto/sha256"
 	"flag"
+	"fmt"
 	client "github.com/jackdoe/back-to-back/client"
 	. "github.com/jackdoe/back-to-back/spec"
 	"log"
 	"math/rand"
 	"net/http"
 	"runtime"
-	"time"
+	//	"time"
 )
 
-func handleRequest() {
+func handleRequest() int {
 	// assume time takes 50 + rand(200)
-	time.Sleep(time.Duration(50) + time.Duration(rand.Intn(200)))
+	//time.Sleep(50 * time.Millisecond)
+	k := 0
+	for i := 0; i < rand.Intn(100); i++ {
+		sha256.Sum256(make([]byte, 100000))
+		k++
+	}
+	return k
+	//	time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
 }
 
 func main() {
@@ -25,15 +34,16 @@ func main() {
 	runtime.GOMAXPROCS(*pmaxproc)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		handleRequest()
+		n := handleRequest()
+		w.Write([]byte(fmt.Sprintf("%d", n)))
 	})
 
 	dispatch := map[string]func(*Message) *Message{}
 	dispatch["sim"] = func(*Message) *Message {
-		handleRequest()
+		n := handleRequest()
 		return &Message{
 			Topic: "sim",
-			Data:  []byte{},
+			Data:  []byte(fmt.Sprintf("%d", n)),
 		}
 	}
 	addrs := []string{}
