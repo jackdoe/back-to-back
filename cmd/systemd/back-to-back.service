@@ -1,0 +1,16 @@
+[Unit]
+Description=Back-To-Back queue service (https://github.com/jackdoe/back-to-back)
+After=runlevel2.target runlevel3.target runlevel4.target runlevel5.target runlevel6.target
+
+[Service]
+User=nobody
+Group=nobody
+Type=simple
+ExecStart=/opt/back-to-back/broker -bindProducer ":9000" -bindConsumer ":9001"
+Restart=on-failure
+LimitNOFILE=500000
+LimitNPROC=32768
+LimitCORE=infinity
+
+[Install]
+WantedBy=multi-user.target
