@@ -14,6 +14,7 @@ import static xyz.backtoback.client.Util.*;
 
 class Broker {
   private static final Logger logger = LoggerFactory.getLogger(Broker.class);
+  static ExecutorService producePool = Executors.newCachedThreadPool();
   private String addr;
   private int port;
   private SocketChannel channel;
@@ -73,7 +74,7 @@ class Broker {
                   throw new RuntimeException(e);
                 }
               },
-              Producer.producePool)
+              producePool)
           .get(timeoutMs + 1000, TimeUnit.MILLISECONDS);
     } catch (ExecutionException e) {
       Throwable clause = e.getCause();

@@ -3,9 +3,7 @@ package xyz.backtoback.client;
 import com.google.protobuf.ByteString;
 import xyz.backtoback.proto.IO;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -21,18 +19,11 @@ public class Main {
               .build();
         });
     int thr = 10;
-    List<String> addrs = new ArrayList<>();
-    for (int i = 0; i < thr - 1; i++) addrs.add("localhost:9001");
-
-    Consumer c = new Consumer(addrs, dispatch);
+    Consumer c = new Consumer(new BrokerConf(thr, "localhost:9001"), dispatch);
 
     final AtomicLong n = new AtomicLong(0);
 
-    List<String> brokers = new ArrayList<>();
-    for (int i = 0; i < thr; i++) {
-      brokers.add("localhost:9000");
-    }
-    Producer p = new Producer(brokers);
+    Producer p = new Producer(new BrokerConf(thr, "localhost:9000"));
     for (int i = 0; i < 10; i++) {
       new Thread(
               () -> {

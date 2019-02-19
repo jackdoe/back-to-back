@@ -4,7 +4,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import xyz.backtoback.proto.IO;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -18,9 +17,14 @@ public class Consumer {
   private Thread reconnector;
   private Semaphore sem;
 
-  public Consumer(List<String> addrs, Map<String, Worker> dispatch) throws IOException {
+  public Consumer(BrokerConf brokerConf, Map<String, Worker> dispatch) {
+    this(brokerConf.poolSize(), brokerConf.asBrokerList(), dispatch);
+  }
+
+  private Consumer(int n, List<String> addrs, Map<String, Worker> dispatch) {
     Collections.shuffle(addrs);
-    sem = new Semaphore(addrs.size());
+    sem = new Semaphore(n);
+
     reconnect = new ArrayBlockingQueue<>(addrs.size());
     for (String addr : addrs) {
       HostAndPort hp = HostAndPort.fromString(addr);
