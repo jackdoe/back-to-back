@@ -8,13 +8,12 @@ import java.io.IOException;
 import java.nio.channels.SocketChannel;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.*;
+import java.util.concurrent.Semaphore;
 
 import static xyz.backtoback.client.Util.*;
 
 class Broker {
   private static final Logger logger = LoggerFactory.getLogger(Broker.class);
-  static ExecutorService producePool = Executors.newCachedThreadPool();
   private String addr;
   private int port;
   private SocketChannel channel;
@@ -23,6 +22,15 @@ class Broker {
     this.addr = addr;
     this.port = port;
     this.channel = connect(addr, port);
+  }
+
+  public void close() throws IOException {
+    this.channel.close();
+    this.expectedSuccessAtMs = 0;
+  }
+
+  public boolean expired() {
+    return expectedSuccessAtMs != 0 && System.currentTimeMillis() > expectedSuccessAtMs;
   }
 
   public void reconnect() {
@@ -57,34 +65,21 @@ class Broker {
     return m;
   }
 
-  public IO.Message produce(String topic, int timeoutMs, IO.Message message)
-      throws InterruptedException, ExecutionException, TimeoutException, IOException,
-          BrokerErrorException {
-    if (timeoutMs == 0) return io(topic, timeoutMs, message);
+  volatile long expectedSuccessAtMs = 0;
 
-    try {
-      // assume the broker will notify us on timeout, so we expect the ERROR message
-      return CompletableFuture.supplyAsync(
-              () -> {
-                try {
-                  return io(topic, timeoutMs, message);
-                } catch (BrokerErrorException e) {
-                  throw e;
-                } catch (Exception e) {
-                  throw new RuntimeException(e);
-                }
-              },
-              producePool)
-          .get(timeoutMs + 1000, TimeUnit.MILLISECONDS);
-    } catch (ExecutionException e) {
-      Throwable clause = e.getCause();
-      if (clause != null) {
-        if (clause instanceof BrokerErrorException) {
-          throw (BrokerErrorException) clause;
-        }
-      }
-      throw e;
-    }
+  public IO.Message produce(String topic, int timeoutMs, IO.Message message)
+      throws IOException, BrokerErrorException {
+    /*
+    here the timeout we handle in the rare(hopefully) scenario that the broker stalls
+    so we just want to disconnect in at least one second after the requested timeout
+     */
+    expectedSuccessAtMs =
+        message.getTimeoutAfterMs() == 0
+            ? 0
+            : System.currentTimeMillis() + 1000 + message.getTimeoutAfterMs();
+    IO.Message m = io(topic, timeoutMs, message);
+    expectedSuccessAtMs = 0;
+    return m;
   }
 
   public void consume(Semaphore sem, Map<String, Consumer.Worker> dispatch)
