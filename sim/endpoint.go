@@ -25,6 +25,11 @@ func handleRequest() int {
 	//	time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
 }
 
+func handleRequestFast() int {
+	sha256.Sum256(make([]byte, 100000))
+	return 1
+}
+
 func main() {
 	var pbroker = flag.String("broker", "127.0.0.1:9001", "broker")
 	var pbindhttp = flag.String("bindhttp", ":12312", "http bind")
@@ -37,6 +42,10 @@ func main() {
 		n := handleRequest()
 		w.Write([]byte(fmt.Sprintf("%d", n)))
 	})
+	http.HandleFunc("/fast", func(w http.ResponseWriter, r *http.Request) {
+		n := handleRequestFast()
+		w.Write([]byte(fmt.Sprintf("%d", n)))
+	})
 
 	dispatch := map[string]func(*Message) *Message{}
 	dispatch["sim"] = func(*Message) *Message {
@@ -46,6 +55,14 @@ func main() {
 			Data:  []byte(fmt.Sprintf("%d", n)),
 		}
 	}
+	dispatch["sim-fast"] = func(*Message) *Message {
+		n := handleRequestFast()
+		return &Message{
+			Topic: "sim-fast",
+			Data:  []byte(fmt.Sprintf("%d", n)),
+		}
+	}
+
 	addrs := []string{}
 	for i := 0; i < *pmaxproc; i++ {
 		addrs = append(addrs, *pbroker)

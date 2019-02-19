@@ -16,6 +16,7 @@ import (
 func getHist() *ghistogram.Histogram {
 	return ghistogram.NewHistogram(10, 10, 1.5)
 }
+
 func main() {
 	var pserver = flag.String("server", "127.0.0.1:9000", "connect to addr")
 	var pserverHttp = flag.String("serverHttp", "http://127.0.0.1:12312/", "connect to addr")
@@ -34,11 +35,12 @@ func main() {
 	histogramHTTP := getHist()
 	work := func() {
 		hist := getHist()
-
+		topics := []string{"sim", "sim-fast"}
+		idx := 0
 		for i := 0; i < *pn; i++ {
 			t0 := time.Now().UnixNano()
 			_, err := producer.Request(&Message{
-				Topic:          "sim",
+				Topic:          topics[idx%len(topics)],
 				Data:           []byte{},
 				TimeoutAfterMs: 0,
 			})
@@ -48,6 +50,7 @@ func main() {
 			}
 			took := (time.Now().UnixNano() - t0) / 1000000
 			hist.Add(uint64(took), 1)
+			idx++
 		}
 		histogramBTB.AddAll(hist)
 		done <- *pn
@@ -55,10 +58,12 @@ func main() {
 
 	workHttp := func() {
 		hist := getHist()
+		urls := []string{*pserverHttp, fmt.Sprintf("%sfast", *pserverHttp)}
+		idx := 0
 
 		for i := 0; i < *pn; i++ {
 			t0 := time.Now().UnixNano()
-			resp, err := http.Get(*pserverHttp)
+			resp, err := http.Get(urls[idx%len(urls)])
 			if err != nil {
 				panic(err)
 			}
@@ -70,6 +75,7 @@ func main() {
 
 			took := (time.Now().UnixNano() - t0) / 1000000
 			hist.Add(uint64(took), 1)
+			idx++
 		}
 		histogramHTTP.AddAll(hist)
 		done <- *pn
