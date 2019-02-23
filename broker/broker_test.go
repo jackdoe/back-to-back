@@ -208,7 +208,7 @@ func testRetries(t *testing.T, consumerAddr string, producer *client.Producer) {
 	}
 
 	consumerB := client.NewConsumer([]string{consumerAddr, consumerAddr}, dispatchWorking)
-	attempts := 10000
+	attempts := 100000
 	// at least 1 error
 	retries := 0
 	for i := 0; i < attempts; i++ {
