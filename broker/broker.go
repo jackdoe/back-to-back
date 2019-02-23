@@ -4,6 +4,7 @@ import (
 	. "github.com/jackdoe/back-to-back/spec"
 	. "github.com/jackdoe/back-to-back/util"
 	log "github.com/sirupsen/logrus"
+	"math/rand"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -206,6 +207,12 @@ POLL:
 		}
 	AGAIN:
 		for {
+			// shuffle the topics so there is less bias towards specific order
+			// e.g. if consumer allways asks "a,b" and "a" has more messages than b
+			// it will never drain b
+			rand.Shuffle(len(poll.Topic), func(i, j int) {
+				poll.Topic[i], poll.Topic[j] = poll.Topic[j], poll.Topic[i]
+			})
 			for _, t := range poll.Topic {
 				topic, ok := topics[t]
 				if !ok {
