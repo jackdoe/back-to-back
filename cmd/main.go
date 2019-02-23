@@ -12,12 +12,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 )
 
 func main() {
 	var pbindServerProducer = flag.String("bindProducer", ":9000", "bind to addr for producers")
-	var pstatsEvery = flag.Int("stats", 5, "print stats ever N seconds")
+	var pstatsEvery = flag.Int("logStatsInterval", 5, "print stats ever N seconds")
+
 	var pbindServerConsumer = flag.String("bindConsumer", ":9001", "bind to addr for consumers")
 	var psendStatsToGraphite = flag.String("graphite", "", "send stats to graphite host:port (e.g. 127.0.0.1:2003)")
 	var pgraphitePrefix = flag.String("graphitePrefix", "btb", "send stats to graphite")
@@ -56,7 +56,7 @@ func main() {
 		if err != nil {
 			log.Fatal("error resolving", err)
 		}
-		go graphite.Graphite(registry, 1*time.Minute, *pgraphitePrefix, addr)
+		go graphite.Graphite(registry, 10e9, *pgraphitePrefix, addr)
 	}
 	btb.PrintStatsEvery(*pstatsEvery, log.New())
 

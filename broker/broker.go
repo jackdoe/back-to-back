@@ -122,8 +122,8 @@ func (btb *BackToBack) updateCounters() {
 	}
 	btb.RUnlock()
 
-	consumersCount := metrics.GetOrRegisterGauge("consumers.connectionCount", btb.registry)
-	producersCount := metrics.GetOrRegisterGauge("producers.connectionCount", btb.registry)
+	consumersCount := metrics.GetOrRegisterGauge("connections.consumers", btb.registry)
+	producersCount := metrics.GetOrRegisterGauge("connections.producers", btb.registry)
 	producersCount.Update(btb.activeProducerCount)
 	consumersCount.Update(btb.activeConsumerCount)
 }
