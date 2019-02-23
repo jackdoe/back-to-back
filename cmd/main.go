@@ -2,7 +2,9 @@ package main
 
 import (
 	"flag"
+	"github.com/cyberdelia/go-metrics-graphite"
 	. "github.com/jackdoe/back-to-back/broker"
+	"github.com/rcrowley/go-metrics"
 	log "github.com/sirupsen/logrus"
 	"net"
 	"net/http"
@@ -10,12 +12,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func main() {
 	var pbindServerProducer = flag.String("bindProducer", ":9000", "bind to addr for producers")
 	var pstatsEvery = flag.Int("stats", 5, "print stats ever N seconds")
 	var pbindServerConsumer = flag.String("bindConsumer", ":9001", "bind to addr for consumers")
+	var psendStatsToGraphite = flag.String("graphite", "", "send stats to graphite host:port (e.g. 127.0.0.1:2003)")
+	var pgraphitePrefix = flag.String("graphitePrefix", "btb", "send stats to graphite")
 	flag.Parse()
 
 	sockConsumer, err := net.Listen("tcp", *pbindServerConsumer)
@@ -31,8 +36,8 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
-
-	btb := NewBackToBack(nil)
+	registry := metrics.DefaultRegistry
+	btb := NewBackToBack(registry)
 	go btb.Listen(sockConsumer, btb.ClientWorkerConsumer)
 	go btb.Listen(sockProducer, btb.ClientWorkerProducer)
 
@@ -46,6 +51,14 @@ func main() {
 		sockProducer.Close()
 		os.Exit(0)
 	}()
+	if *psendStatsToGraphite != "" {
+		addr, err := net.ResolveTCPAddr("tcp", *psendStatsToGraphite)
+		if err != nil {
+			log.Fatal("error resolving", err)
+		}
+		go graphite.Graphite(registry, 1*time.Minute, *pgraphitePrefix, addr)
+	}
 	btb.PrintStatsEvery(*pstatsEvery, log.New())
+
 	os.Exit(0)
 }
