@@ -22,7 +22,7 @@ func TestIntegration(t *testing.T) {
 		t.Fatal("Listen error: ", err)
 	}
 
-	btb := NewBackToBack()
+	btb := NewBackToBack(nil)
 	go btb.Listen(sockConsumer, btb.ClientWorkerConsumer)
 	go btb.Listen(sockProducer, btb.ClientWorkerProducer)
 
@@ -31,8 +31,6 @@ func TestIntegration(t *testing.T) {
 	testRetries(t, consumerAddr, producer)
 	testMultipleTopics(t, consumerAddr, producer)
 	testTimeouts(t, consumerAddr, producer)
-
-	btb.DumpStats()
 
 	sockConsumer.Close()
 	sockProducer.Close()

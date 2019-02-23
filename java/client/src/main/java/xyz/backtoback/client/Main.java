@@ -50,7 +50,7 @@ public class Main {
             p.produce(
                 "abc",
                 IO.Message.newBuilder()
-                    .setTimeoutAfterMs(1000)
+                    .setTimeoutAfterMs(0)
                     .setData(ByteString.copyFrom("hello world".getBytes()))
                     .build());
       } catch (Exception e) {

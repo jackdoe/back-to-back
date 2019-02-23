@@ -35,7 +35,7 @@ func main() {
 			_, err := p.Request(&Message{
 				Topic:          *ptopic,
 				Data:           []byte(*pmessage),
-				TimeoutAfterMs: 1000,
+				TimeoutAfterMs: 0,
 			})
 			took := (time.Now().UnixNano() - t0) / 1000000
 			if err != nil {

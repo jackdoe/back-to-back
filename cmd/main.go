@@ -9,14 +9,12 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
-	"runtime"
-	"runtime/debug"
 	"syscall"
-	"time"
 )
 
 func main() {
 	var pbindServerProducer = flag.String("bindProducer", ":9000", "bind to addr for producers")
+	var pstatsEvery = flag.Int("stats", 5, "print stats ever N seconds")
 	var pbindServerConsumer = flag.String("bindConsumer", ":9001", "bind to addr for consumers")
 	flag.Parse()
 
@@ -34,7 +32,7 @@ func main() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
 
-	btb := NewBackToBack()
+	btb := NewBackToBack(nil)
 	go btb.Listen(sockConsumer, btb.ClientWorkerConsumer)
 	go btb.Listen(sockProducer, btb.ClientWorkerProducer)
 
@@ -48,17 +46,6 @@ func main() {
 		sockProducer.Close()
 		os.Exit(0)
 	}()
-
-	i := 0
-	for {
-		btb.DumpStats()
-		time.Sleep(1 * time.Second)
-		i++
-		if i%100 == 0 {
-			runtime.GC()
-			debug.FreeOSMemory()
-			log.Infof("GC")
-		}
-	}
+	btb.PrintStatsEvery(*pstatsEvery, log.New())
 	os.Exit(0)
 }

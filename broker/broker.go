@@ -1,8 +1,10 @@
 package broker
 
 import (
+	"fmt"
 	. "github.com/jackdoe/back-to-back/spec"
 	. "github.com/jackdoe/back-to-back/util"
+	"github.com/rcrowley/go-metrics"
 	log "github.com/sirupsen/logrus"
 	"math/rand"
 	"net"
@@ -15,13 +17,13 @@ type Topic struct {
 	waiting                 chan net.Conn
 	requests                chan MessageAndReply
 	name                    string
-	producedCount           uint64
-	consumedCount           uint64
-	producedBytes           uint64
-	consumedBytes           uint64
-	consumedTimeoutCount    uint64
-	consumedConnectionError uint64
-	consumedRetries         uint64
+	requestsTimer           metrics.Timer
+	pollCount               metrics.Meter
+	producedBytes           metrics.Counter
+	consumedBytes           metrics.Counter
+	consumedTimeoutCount    metrics.Meter
+	consumedConnectionError metrics.Meter
+	consumedRetries         metrics.Meter
 
 	sync.RWMutex
 }
@@ -33,18 +35,38 @@ type MessageAndReply struct {
 
 type BackToBack struct {
 	topics              map[string]*Topic
-	pollCount           uint64
 	activeConsumerCount int64
 	activeProducerCount int64
 	uuid                uint64
 	producerID          uint32
+	registry            metrics.Registry
 	sync.RWMutex
 }
 
-func NewBackToBack() *BackToBack {
-	return &BackToBack{
-		topics: map[string]*Topic{},
+func NewBackToBack(registry metrics.Registry) *BackToBack {
+	if registry == nil {
+		registry = metrics.DefaultRegistry
 	}
+	btb := &BackToBack{
+		topics:   map[string]*Topic{},
+		registry: registry,
+	}
+
+	go func() {
+		for {
+			time.Sleep(1 * time.Second)
+			btb.updateCounters()
+		}
+	}()
+	return btb
+}
+
+func (btb *BackToBack) GetRegistry() metrics.Registry {
+	return btb.registry
+}
+
+func (btb *BackToBack) PrintStatsEvery(n int, l metrics.Logger) {
+	metrics.LogScaled(metrics.DefaultRegistry, time.Duration(n)*time.Second, time.Millisecond, l)
 }
 
 func (btb *BackToBack) getTopic(topic string) *Topic {
@@ -54,8 +76,15 @@ func (btb *BackToBack) getTopic(topic string) *Topic {
 	if !ok {
 		btb.Lock()
 		t = &Topic{
-			requests: make(chan MessageAndReply, 10000),
-			name:     topic,
+			requests:                make(chan MessageAndReply, 10000),
+			name:                    topic,
+			requestsTimer:           metrics.GetOrRegisterTimer(fmt.Sprintf("topic.%s.requests", topic), btb.registry),
+			pollCount:               metrics.GetOrRegisterMeter(fmt.Sprintf("topic.%s.pollCount", topic), btb.registry),
+			producedBytes:           metrics.GetOrRegisterCounter(fmt.Sprintf("topic.%s.producedBytes", topic), btb.registry),
+			consumedBytes:           metrics.GetOrRegisterCounter(fmt.Sprintf("topic.%s.consumedBytes", topic), btb.registry),
+			consumedTimeoutCount:    metrics.GetOrRegisterMeter(fmt.Sprintf("topic.%s.consumedTimeoutCount", topic), btb.registry),
+			consumedConnectionError: metrics.GetOrRegisterMeter(fmt.Sprintf("topic.%s.consumedConnectionError", topic), btb.registry),
+			consumedRetries:         metrics.GetOrRegisterMeter(fmt.Sprintf("topic.%s.consumedRetries", topic), btb.registry),
 		}
 		btb.topics[topic] = t
 		btb.Unlock()
@@ -84,34 +113,19 @@ func (btb *BackToBack) Listen(listener net.Listener, worker func(net.Conn)) {
 	listener.Close()
 }
 
-func (btb *BackToBack) DumpStats() {
-	producedCount := uint64(0)
-	consumedCount := uint64(0)
-	producedBytes := uint64(0)
-	consumedBytes := uint64(0)
-
+func (btb *BackToBack) updateCounters() {
 	btb.RLock()
 	for name, t := range btb.topics {
-		consumedBytes += t.consumedBytes
-		consumedCount += t.consumedCount
+		queueLen := metrics.GetOrRegisterGauge(fmt.Sprintf("topic.%s.queueLen", name), btb.registry)
+		queueLen.Update(int64(len(t.requests)))
 
-		producedCount += t.producedCount
-		producedBytes += t.producedBytes
-
-		log.Infof("%s: p/c: %d [%.2fM]/%d [%.2fM], consumer [ timeout/err/retries: %d/%d/%d ], queue len: %d",
-			name,
-			t.producedCount,
-			float64(t.producedBytes)/(1024.0*1024.0),
-			t.consumedCount,
-			float64(t.consumedBytes)/(1024.0*1024.0),
-			t.consumedTimeoutCount,
-			t.consumedConnectionError,
-			t.consumedRetries,
-			len(t.requests))
 	}
 	btb.RUnlock()
 
-	log.Infof("total: p/c: %d [%.2fM]/%d [%.2fM], poll: %d, consumer conn: %d, producer conn: %d", producedCount, float64(producedBytes)/(1024.0*1024.0), consumedCount, float64(consumedBytes)/(1024.0*1024.0), btb.pollCount, btb.activeConsumerCount, btb.activeProducerCount)
+	consumersCount := metrics.GetOrRegisterGauge("consumers.connectionCount", btb.registry)
+	producersCount := metrics.GetOrRegisterGauge("producers.connectionCount", btb.registry)
+	producersCount.Update(btb.activeProducerCount)
+	consumersCount.Update(btb.activeConsumerCount)
 }
 
 func makeError(m *Message, errorType MessageType, e string) *Message {
@@ -153,9 +167,32 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 	last_message_id := uint32(0)
 	pid := atomic.AddUint32(&btb.producerID, 1)
 
+	// timers := map[string]map[string]metrics.Timer{}
+	// prefix := strings.Replace(strings.Replace(c.RemoteAddr().String(), ".", "_", -1), ":", "_", -1)
+	// getMetricKey := func(t string, name string) string {
+
+	// 	key := fmt.Sprintf("perProducer.%s.%s.%s", prefix, t, name)
+	// 	return key
+	// }
+	// getOrCreateTimer := func(kind string, name string) metrics.Timer {
+	// 	k, ok := timers[kind]
+	// 	if !ok {
+	// 		k = map[string]metrics.Timer{}
+	// 		timers[kind] = k
+	// 	}
+	// 	t, ok := k[name]
+	// 	if !ok {
+	// 		key := getMetricKey(kind, name)
+	// 		t = metrics.GetOrRegisterTimer(key, btb.registry)
+	// 		k[name] = t
+	// 	}
+	// 	return t
+	// }
+
 	for {
 		last_message_id++
 		message, err := ReceiveRequest(c)
+		t0 := time.Now().UnixNano()
 		if err != nil {
 			//			log.Warnf("err receive: %s", err.Error())
 			break
@@ -166,6 +203,9 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 			topic = btb.getTopic(message.Topic)
 			topics[message.Topic] = topic
 		}
+		//		timerWaitForConsumer := getOrCreateTimer("waitForConsuer", message.Topic)
+		//		timerWaitForProducer := getOrCreateTimer("waitForProducer", message.Topic)
+		topic.producedBytes.Inc(int64(len(message.Data)))
 
 		message.Uuid = uint64(pid)<<uint64(32) | uint64(last_message_id)
 
@@ -184,19 +224,21 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 			timer.Stop()
 
 			if reply.Type == MessageType_ERROR {
-				atomic.AddUint64(&topic.consumedTimeoutCount, 1)
+				topic.consumedTimeoutCount.Mark(1)
 			}
 		}
 
+		//		timerWaitForConsumer.Update(took)
 		err = Send(c, Marshallable(reply))
+
+		//		timerWaitForProducer.Update(took)
 		if err != nil {
 			log.Warnf("err reply: %s", err.Error())
 			break
 		}
+		took := time.Nanosecond * time.Duration(time.Now().UnixNano()-t0)
+		topic.requestsTimer.Update(took)
 
-		atomic.AddUint64(&topic.producedCount, 1)
-		atomic.AddUint64(&topic.producedBytes, uint64(len(message.Data)))
-		atomic.AddUint64(&topic.consumedBytes, uint64(len(reply.Data)))
 	}
 
 	c.Close()
@@ -205,6 +247,11 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 	// in closed channel (panic) from the consumer if it gets delayed and replies
 	// to timed out message
 	// close(replyChannel)
+	// for kind, v := range timers {
+	// 	for key, _ := range v {
+	// 		btb.registry.Unregister(getMetricKey(kind, key))
+	// 	}
+	// }
 }
 
 func (btb *BackToBack) ClientWorkerConsumer(c net.Conn) {
@@ -215,7 +262,6 @@ func (btb *BackToBack) ClientWorkerConsumer(c net.Conn) {
 POLL:
 	for {
 		poll, err := ReceivePoll(c)
-		atomic.AddUint64(&btb.pollCount, 1)
 		if err != nil {
 			log.Printf("error waiting for poll: %s", err.Error())
 			break POLL
@@ -234,11 +280,10 @@ POLL:
 					topic = btb.getTopic(t)
 					topics[t] = topic
 				}
-
+				topic.pollCount.Mark(1)
 				select {
 				case r := <-topic.requests:
 					request := r.message
-					atomic.AddUint64(&topic.consumedCount, 1)
 
 					hasError := false
 					var reply *Message
@@ -266,11 +311,11 @@ POLL:
 					}
 
 					if hasError {
-						atomic.AddUint64(&topic.consumedConnectionError, 1)
+						topic.consumedConnectionError.Mark(1)
 						now := uint64(time.Now().UnixNano())
 
 						if request.RetryTTL > 0 && (request.TimeoutAtNanosecond == 0 || now < request.TimeoutAtNanosecond) {
-							atomic.AddUint64(&topic.consumedRetries, 1)
+							topic.consumedRetries.Mark(1)
 
 							request.RetryTTL--
 							topic.requests <- r
