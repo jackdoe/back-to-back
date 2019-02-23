@@ -41,7 +41,7 @@ func main() {
 			t0 := time.Now().UnixNano()
 			_, err := producer.Request(&Message{
 				Topic:          topics[idx%len(topics)],
-				Data:           []byte{},
+				Data:           []byte("bzbz"),
 				TimeoutAfterMs: 0,
 			})
 

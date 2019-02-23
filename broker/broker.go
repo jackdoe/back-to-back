@@ -17,12 +17,15 @@ type Topic struct {
 	name                    string
 	producedCount           uint64
 	consumedCount           uint64
+	producedBytes           uint64
+	consumedBytes           uint64
 	consumedTimeoutCount    uint64
 	consumedConnectionError uint64
 	consumedRetries         uint64
 
 	sync.RWMutex
 }
+
 type MessageAndReply struct {
 	message *Message
 	reply   chan *Message
@@ -80,17 +83,27 @@ func (btb *BackToBack) Listen(listener net.Listener, worker func(net.Conn)) {
 
 	listener.Close()
 }
+
 func (btb *BackToBack) DumpStats() {
 	producedCount := uint64(0)
 	consumedCount := uint64(0)
+	producedBytes := uint64(0)
+	consumedBytes := uint64(0)
+
 	btb.RLock()
 	for name, t := range btb.topics {
-		producedCount += t.producedCount
+		consumedBytes += t.consumedBytes
 		consumedCount += t.consumedCount
-		log.Infof("%s: p/c: %d/%d, consumer [ timeout/err/retries: %d/%d/%d ], queue len: %d",
+
+		producedCount += t.producedCount
+		producedBytes += t.producedBytes
+
+		log.Infof("%s: p/c: %d [%.2fM]/%d [%.2fM], consumer [ timeout/err/retries: %d/%d/%d ], queue len: %d",
 			name,
 			t.producedCount,
+			float64(t.producedBytes)/(1024.0*1024.0),
 			t.consumedCount,
+			float64(t.consumedBytes)/(1024.0*1024.0),
 			t.consumedTimeoutCount,
 			t.consumedConnectionError,
 			t.consumedRetries,
@@ -98,7 +111,7 @@ func (btb *BackToBack) DumpStats() {
 	}
 	btb.RUnlock()
 
-	log.Infof("total: p/c: %d/%d, poll: %d, consumer conn: %d, producer conn: %d", producedCount, consumedCount, btb.pollCount, btb.activeConsumerCount, btb.activeProducerCount)
+	log.Infof("total: p/c: %d [%.2fM]/%d [%.2fM], poll: %d, consumer conn: %d, producer conn: %d", producedCount, float64(producedBytes)/(1024.0*1024.0), consumedCount, float64(consumedBytes)/(1024.0*1024.0), btb.pollCount, btb.activeConsumerCount, btb.activeProducerCount)
 }
 
 func makeError(m *Message, errorType MessageType, e string) *Message {
@@ -182,6 +195,8 @@ func (btb *BackToBack) ClientWorkerProducer(c net.Conn) {
 		}
 
 		atomic.AddUint64(&topic.producedCount, 1)
+		atomic.AddUint64(&topic.producedBytes, uint64(len(message.Data)))
+		atomic.AddUint64(&topic.consumedBytes, uint64(len(reply.Data)))
 	}
 
 	c.Close()
