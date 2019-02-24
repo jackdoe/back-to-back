@@ -36,6 +36,7 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
+
 	registry := metrics.DefaultRegistry
 	btb := NewBackToBack(registry)
 	go btb.Listen(sockConsumer, btb.ClientWorkerConsumer)
