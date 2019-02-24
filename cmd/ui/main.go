@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+
 	"github.com/cyberdelia/go-metrics-graphite"
 	ui "github.com/gizak/termui"
 	"github.com/gizak/termui/widgets"
@@ -92,6 +93,7 @@ type Graph struct {
 	history map[string][]float64
 	title   string
 	index   int
+	color   ui.Color
 }
 
 func (h *Graph) draw() []ui.Drawable {
@@ -110,16 +112,17 @@ func (h *Graph) draw() []ui.Drawable {
 		p1.Data = [][]float64{data}
 		p1.DotRune = '+'
 		p1.AxesColor = ui.ColorWhite
-		p1.LineColors[0] = ui.ColorYellow
+		p1.LineColors[0] = h.color
 		p1.DrawDirection = widgets.DrawLeft
 		out = append(out, p1)
 	}
 	return out
 }
 func (h *Graph) add(s string, n float64) {
-	h.history[s] = append(h.history[s], n)
 	if len(h.history[s]) > 50 {
-		h.history[s] = h.history[s][1:]
+		h.history[s] = append(h.history[s][1:], n)
+	} else {
+		h.history[s] = append(h.history[s], n)
 	}
 }
 
@@ -131,19 +134,26 @@ func NewGraph(title string) *Graph {
 }
 
 func draw(drawables map[string]*Graph, registry metrics.Registry) {
-	percentiles := []float64{0.5, 0.75, 0.99}
+	percentiles := []float64{0.75, 0.99}
 	du := float64(time.Second)
 	registry.Each(func(name string, i interface{}) {
 		switch metric := i.(type) {
-		case metrics.Gauge:
-
+		case metrics.Counter:
 			h, ok := drawables[name]
 			if !ok {
 				h = NewGraph(name)
 				drawables[name] = h
+				h.color = ui.ColorBlue
+			}
+			h.add("count", float64(metric.Count()))
+		case metrics.Gauge:
+			h, ok := drawables[name]
+			if !ok {
+				h = NewGraph(name)
+				h.color = ui.ColorYellow
+				drawables[name] = h
 			}
 			h.add("value", float64(metric.Value()))
-
 		case metrics.Timer:
 			t := metric.Snapshot()
 			ps := t.Percentiles(percentiles)
@@ -151,6 +161,7 @@ func draw(drawables map[string]*Graph, registry metrics.Registry) {
 			if !ok {
 				h = NewGraph(name)
 				drawables[name] = h
+				h.color = ui.ColorMagenta
 			}
 			h.add("one-minute-k", float64(t.Rate1())/1000)
 			h.add("five-minute-k", float64(t.Rate5())/1000)
@@ -174,12 +185,12 @@ func draw(drawables map[string]*Graph, registry metrics.Registry) {
 		d := drawables[n]
 		charts := d.draw()
 		for _, p := range charts {
-			p.SetRect(offx, offy, offx+50, offy+10)
-			offx += 50
+			p.SetRect(offx, offy, offx+60, offy+15)
+			offx += 60
 			j++
 			if j%3 == 0 {
 				j = 0
-				offy += 10
+				offy += 15
 				offx = 0
 			}
 
